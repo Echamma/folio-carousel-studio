@@ -1,10 +1,16 @@
 # Folio Carousel Studio
 
+This is the **Linux desktop branch**. The Windows version is preserved on `main`.
+
+Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). For the AppImage, run `chmod +x Folio-Carousel-Studio-1.1.1-x64.AppImage`, then `./Folio-Carousel-Studio-1.1.1-x64.AppImage`. If FUSE is unavailable, use `./Folio-Carousel-Studio-1.1.1-x64.AppImage --appimage-extract-and-run`. For Debian/Ubuntu, install with `sudo apt install ./Folio-Carousel-Studio-1.1.1-x64.deb`, then launch Folio from your application menu.
+
+On Linux, `npm ci` installs development dependencies, `npm start` opens the editor, and `npm run build` creates AppImage and `.deb` packages. Use Node.js 22. `npm run build:windows` retains Windows packaging. Headless tests run with `xvfb-run -a npm test`. GitHub tests editor behavior, recovery on close, and the packaged executable on Ubuntu 22.04 before publishing Linux packages with SHA-256 checksums.
+
 A Windows desktop app for making Instagram carousels, inspired by the collection in `D:\Figma Templates`. The existing animation studio in the parent folder is preserved.
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.1.1.exe`. This is a portable app; installation and an account are not required.
+Use the Linux AppImage or `.deb` package from Releases. Windows users can find `Folio-Carousel-Studio-1.1.1.exe` in the Windows release or use the `main` branch. No account is required to run the app; this private repository requires GitHub access to download it.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 

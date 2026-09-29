@@ -3,10 +3,13 @@
   "version": "1.1.1",
   "description": "An offline Instagram carousel desktop studio inspired by your Figma templates",
   "author": "Folio",
+  "homepage": "https://github.com/Echamma/folio-carousel-studio",
+  "license": "UNLICENSED",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win portable",
+    "build": "electron-builder --linux AppImage deb --x64",
+    "build:windows": "electron-builder --win portable",
     "test": "electron tests/smoke.cjs && electron tests/close.cjs"
   },
   "dependencies": {
@@ -37,6 +40,13 @@
     },
     "portable": {
       "artifactName": "Folio-Carousel-Studio-1.1.1.exe"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "executableName": "folio-carousel-studio",
+      "category": "Graphics",
+      "maintainer": "Echamma <Echamma@users.noreply.github.com>",
+      "artifactName": "Folio-Carousel-Studio-${version}-${arch}.${ext}"
     }
   }
 }

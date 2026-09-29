@@ -38,6 +38,19 @@ app.whenReady().then(() => {
   window.loadFile(path.join(__dirname, 'index.html'));
 });
 app.on('window-all-closed', () => app.quit());
+if (process.argv.includes('--smoke-test')) {
+  process.env.FOLIO_TEST = '1';
+  app.setPath('userData', path.join(app.getPath('temp'), 'folio-carousel-studio-smoke-' + process.pid));
+  const timeout = setTimeout(() => { console.error('Packaged Folio startup timed out'); app.exit(1); }, 20000);
+  app.whenReady().then(() => window.webContents.once('did-finish-load', async () => {
+    try {
+      const ok = await window.webContents.executeJavaScript('(() => { const snapshot = window.FolioSession && window.FolioSession.snapshot(); return snapshot && snapshot.slides.length > 0; })()');
+      if (!ok) throw new Error('Packaged editor did not initialize');
+      console.log('PASS: Packaged Folio desktop app starts and loads its editor');
+      clearTimeout(timeout); app.exit(0);
+    } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
+  }));
+}
 ipcMain.handle('load-recovery', async () => {
   try { return JSON.parse(await fs.readFile(recoveryPath(), 'utf8')); }
   catch (_) { return null; }
