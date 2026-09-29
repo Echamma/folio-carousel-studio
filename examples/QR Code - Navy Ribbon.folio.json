@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "name": "QR Code — Navy Ribbon",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#f3ddc1",
+  "brand": "YOUR STUDIO",
+  "handle": "@yourstudio",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "4fa895cf-ce82-4dbd-915d-3d598fdc5208",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "What Is A\nQR Code?",
+      "body": "",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 98,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "b0296d9c-a8e6-4ff5-a5fb-dfb291c4f133",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "CONNECT:",
+      "body": "It is a physical copy-paste button for your camera.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "7b73baa1-ae1d-411b-b710-6534935316c7",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Free",
+      "body": "Anyone can generate a custom code for free.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "7edd38c9-d172-4aec-9526-a55a257fb36a",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Universal",
+      "body": "Originally invented in 1994 to track car parts, they now seamlessly connect you to Wi-Fi networks, digital menus, and contactless payments.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "84e8e7bf-e8ee-45fb-8828-a7d7c037701d",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Sale:",
+      "body": "Share your early-bird offer for artists, small shops, and restaurants.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "85f10805-acc0-40e1-86ea-fa4743374acc",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Sale:",
+      "body": "Add your launch promotion here. Give your audience a clear reason to get started.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "90893565-a6ae-4c63-b675-bfa0e1bf52aa",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Sale:",
+      "body": "Add your subscription offer, price, and terms here.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": false
+    },
+    {
+      "id": "ce691053-700e-4225-ad15-47a127731756",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Fill out the\nform in our\nBio",
+      "body": "",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "titleSize": 98,
+      "texture": true,
+      "swipe": false
+    }
+  ]
+}
