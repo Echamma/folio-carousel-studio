@@ -2,7 +2,7 @@
 
 This is the **Linux desktop branch**. The Windows version is preserved on `main`.
 
-Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). For the AppImage, run `chmod +x Folio-Carousel-Studio-1.1.1-x64.AppImage`, then `./Folio-Carousel-Studio-1.1.1-x64.AppImage`. If FUSE is unavailable, use `./Folio-Carousel-Studio-1.1.1-x64.AppImage --appimage-extract-and-run`. For Debian/Ubuntu, install with `sudo apt install ./Folio-Carousel-Studio-1.1.1-x64.deb`, then launch Folio from your application menu.
+Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). For the AppImage, run `chmod +x Folio-Carousel-Studio-1.1.1-x86_64.AppImage`, then `./Folio-Carousel-Studio-1.1.1-x86_64.AppImage`. If FUSE is unavailable, use `./Folio-Carousel-Studio-1.1.1-x86_64.AppImage --appimage-extract-and-run`. For Debian/Ubuntu, install with `sudo apt install ./Folio-Carousel-Studio-1.1.1-amd64.deb`, then launch Folio from your application menu.
 
 On Linux, `npm ci` installs development dependencies, `npm start` opens the editor, and `npm run build` creates AppImage and `.deb` packages. Use Node.js 22. `npm run build:windows` retains Windows packaging. Headless tests run with `xvfb-run -a npm test`. GitHub tests editor behavior, recovery on close, and the packaged executable on Ubuntu 22.04 before publishing Linux packages with SHA-256 checksums.
 
