@@ -2,7 +2,7 @@
 
 This is the **Linux desktop branch**. The Windows version is preserved on `main`.
 
-Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). On Linux, make the AppImage executable with `chmod +x`, then run it. If FUSE is unavailable, add `--appimage-extract-and-run`. For Debian/Ubuntu, install the `.deb` with `sudo apt install ./Folio-Carousel-Studio-1.2.0-amd64.deb`, then launch Folio from your application menu.
+Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). On Linux, make the AppImage executable with `chmod +x`, then run it. If FUSE is unavailable, add `--appimage-extract-and-run`. For Debian/Ubuntu, install the `.deb` with `sudo apt install ./Folio-Carousel-Studio-1.2.1-amd64.deb`, then launch Folio from your application menu.
 
 On Linux, `npm ci` installs development dependencies, `npm start` opens the editor, and `npm run build` creates AppImage and `.deb` packages. Use Node.js 22. `npm run build:windows` retains Windows packaging. Headless tests run with `xvfb-run -a npm test`. GitHub tests editor behavior, recovery on close, and the packaged executable on Ubuntu 22.04 before publishing Linux packages with SHA-256 checksums.
 
@@ -10,7 +10,7 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Use the Linux AppImage or `.deb` package from Releases. Windows users can run `Folio-Carousel-Studio-1.2.0.exe` from `dist` after building this branch. No account is required to run the app; this private repository requires GitHub access to download it.
+Use the Linux AppImage or `.deb` package from Releases. Windows users can run `Folio-Carousel-Studio-1.2.1.exe` from `dist` after building this branch. No account is required to run the app; this private repository requires GitHub access to download it.
 
 To run from source: `npm install`, then `npm start`. To rebuild the Windows portable executable: `npm run build:windows`. On Linux, use `npm run build`.
 
@@ -18,7 +18,7 @@ To run from source: `npm install`, then `npm start`. To rebuild the Windows port
 
 - Select one of ten editable layouts: Introduction, Text Only, Checklist, Quote, Image Center, Image Left, Image Right, Image Compare, Thank You, and Navy Ribbon.
 - **Projects** opens with ten editable six-slide Fun Tech Facts carousels in the navy ribbon style. Click any project to edit it. The collection is seeded into local project storage once, so your edits remain yours on later launches.
-- **New** creates a new project in Projects. **Save project** (or Ctrl+S) saves the current project there. **Open** shows the saved projects list. The app also saves changes automatically, including when switching between projects.
+- **New** creates a new project in Projects. **Save project** (or Ctrl+S) saves the current project there. **Open** shows a searchable picker for saved projects. The app also saves changes automatically, including when switching between projects.
 - **Open a project file** imports a `.folio.json` file into Projects. **Save a copy to file** writes a portable `.folio.json` backup.
 - **Navy ribbon carousel** in Templates starts an eight-slide square project based on `Untitled.png`: navy background, cream typography, and continuous white rough borders. The first and last slides center their headlines; the middle slides use a heading and body.
 - Write your copy in Slide details. Add, duplicate, reorder, or delete slides using the strip below the canvas. Undo and redo restore edits and slide changes.

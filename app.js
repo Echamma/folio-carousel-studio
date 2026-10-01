@@ -20,7 +20,7 @@ const navyProject = () => ({ version: 1, name: 'QR Code — Navy Ribbon', format
   ['Sale:', 'Add your subscription offer, price, and terms here.'],
   ['Fill out the\nform in our\nBio', '']
 ].map(([title, body]) => createSlide('navy-ribbon', { eyebrow: '', title, body, titleSize: body ? 64 : 98, swipe: false })) });
-let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false; let featuredProjects = [];
+let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = [];
 const history = []; const future = []; const imageCache = new Map();
 function toast(message) { $('toast').textContent = message; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3500); }
 function current() { return project.slides[selected]; }
@@ -167,6 +167,7 @@ async function renderSavedProjects() {
     const bi = featuredOrder.has(b.libraryId) ? featuredOrder.get(b.libraryId) : Infinity;
     return ai - bi || (b.savedAt || 0) - (a.savedAt || 0);
   });
+  savedProjectsCache = projects;
   const list = $('projects-list'); list.replaceChildren();
   projects.forEach((entry, index) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = entry.libraryId;
@@ -178,6 +179,32 @@ async function renderSavedProjects() {
   });
   $('projects-count').textContent = `${projects.length} project${projects.length === 1 ? '' : 's'}`;
   syncControls();
+  if ($('project-dialog').open) renderProjectPicker();
+}
+function renderProjectPicker() {
+  const query = $('project-search').value.trim().toLocaleLowerCase();
+  const list = $('project-picker-list'); list.replaceChildren();
+  savedProjectsCache.filter(entry => (entry.name || '').toLocaleLowerCase().includes(query)).forEach(entry => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = entry.libraryId;
+    button.setAttribute('aria-label', `Open ${entry.name}`);
+    const label = document.createElement('span'); label.className = 'collection-label'; label.textContent = entry.name || 'Untitled carousel';
+    const count = document.createElement('small'); count.textContent = `${entry.slides.length} slides`;
+    button.append(label, count);
+    button.onclick = async () => { if (await openSavedProject(entry.libraryId)) $('project-dialog').close(); };
+    list.append(button);
+  });
+  if (!list.childElementCount) {
+    const empty = document.createElement('p'); empty.className = 'collection-intro'; empty.textContent = 'No saved projects match your search.'; list.append(empty);
+  }
+}
+async function showProjectPicker() {
+  try {
+    await renderSavedProjects();
+    $('project-search').value = '';
+    renderProjectPicker();
+    $('project-dialog').showModal();
+    $('project-search').focus();
+  } catch (error) { toast('Could not show saved projects: ' + error.message); }
 }
 async function openSavedProject(id) {
   try {
@@ -188,7 +215,8 @@ async function openSavedProject(id) {
     await saveNow();
     switchTab('projects');
     await renderSavedProjects();
-  } catch (error) { toast('Could not open project: ' + error.message); }
+    return true;
+  } catch (error) { toast('Could not open project: ' + error.message); return false; }
 }
 async function createProject(value) {
   try {
@@ -278,7 +306,9 @@ $('save-project').onclick = saveProject;
 $('save-project-file').onclick = saveProjectFile;
 $('new-project').onclick = () => createProject({ ...defaults(), name: 'Untitled carousel' });
 $('navy-starter').onclick = startNavy;
-$('open-project').onclick = () => { switchTab('projects'); $('projects-list').scrollIntoView({ block: 'nearest' }); };
+$('open-project').onclick = showProjectPicker;
+$('project-search').oninput = renderProjectPicker;
+$('project-dialog-import').onclick = () => { $('project-dialog').close(); $('import-project').click(); };
 $('import-project').onclick = async () => { try { if (window.desktop) { const value = await desktop.openProject(); if (value) await importProjectFile(value); } else $('project-file').click(); } catch (error) { toast('Could not open file: ' + error.message); } };
 $('project-file').onchange = async () => { const file = $('project-file').files[0]; if (!file) return; try { if (file.size > 150 * 1024 * 1024) throw new Error('Project exceeds 150 MB.'); await importProjectFile(JSON.parse(await file.text())); } catch (error) { toast('Could not open: ' + error.message); } finally { $('project-file').value = ''; } };
 $('export').onclick = () => exportSlides(); $('export-slide').onclick = () => exportSlides(true);
@@ -294,6 +324,7 @@ document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(event.shiftKey); }
   if (/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
   if ($('preview-dialog').open) { if (event.key === 'ArrowLeft') $('preview-prev').click(); if (event.key === 'ArrowRight') $('preview-next').click(); return; }
+  if ($('project-dialog').open) return;
   if ($('reference-dialog').open) return;
   if (event.key === 'ArrowLeft' && selected > 0) selectSlide(selected - 1);
   if (event.key === 'ArrowRight' && selected < project.slides.length - 1) selectSlide(selected + 1);

@@ -19,6 +19,12 @@ app.whenReady().then(async () => {
       };
       await waitFor(() => db && document.querySelectorAll('#projects-list button[data-id]').length === 10);
       if (project.name !== 'Why Bluetooth Has a Viking Name') throw new Error('First carousel did not open in the editor');
+      document.getElementById('open-project').click();
+      await waitFor(() => document.getElementById('project-dialog').open && document.querySelectorAll('#project-picker-list button[data-id]').length === 10);
+      const search = document.getElementById('project-search'); search.value = 'GPS'; search.dispatchEvent(new Event('input'));
+      if (document.querySelectorAll('#project-picker-list button[data-id]').length !== 1) throw new Error('Project search did not filter the picker');
+      document.querySelector('#project-picker-list button[data-id="02-gps"]').click();
+      await waitFor(() => project.name === 'How GPS Finds You' && !document.getElementById('project-dialog').open);
       document.getElementById('new-project').click();
       await waitFor(() => project.name === 'Untitled carousel' && document.querySelectorAll('#projects-list button[data-id]').length === 11);
       const createdId = project.libraryId;
