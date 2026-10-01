@@ -20,7 +20,7 @@ app.whenReady().then(async () => {
     const results = await win.webContents.executeJavaScript(`(async () => {
       const checks = [];
       const assert = (value, message) => { if (!value) throw new Error(message); checks.push(message); };
-      while (!db) await new Promise(resolve => setTimeout(resolve, 30));
+      await window.FolioReady;
       project = defaults(); selected = 0; await paint(); syncControls();
       assert(project.slides.length === 5, 'Default five-slide project loads');
       const before = JSON.stringify(project); addSlide(); assert(project.slides.length === 6, 'Add slide'); undo(); assert(JSON.stringify(project) === before, 'Undo slide insertion'); undo(true); assert(project.slides.length === 6, 'Redo slide insertion'); undo();
