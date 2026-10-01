@@ -20,7 +20,7 @@ const navyProject = () => ({ version: 1, name: 'QR Code — Navy Ribbon', format
   ['Sale:', 'Add your subscription offer, price, and terms here.'],
   ['Fill out the\nform in our\nBio', '']
 ].map(([title, body]) => createSlide('navy-ribbon', { eyebrow: '', title, body, titleSize: body ? 64 : 98, swipe: false })) });
-let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = [];
+let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = []; let projectFolder = null; let saveQueue = Promise.resolve();
 const history = []; const future = []; const imageCache = new Map();
 function toast(message) { $('toast').textContent = message; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3500); }
 function current() { return project.slides[selected]; }
@@ -32,11 +32,8 @@ async function openDB() {
   db = await new Promise((resolve, reject) => { const req = indexedDB.open('folio-studio', 1); req.onupgradeneeded = () => req.result.createObjectStore('projects'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
   return new Promise((resolve, reject) => { const req = db.transaction('projects').objectStore('projects').get('current'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 }
-async function saveNow() {
-  clearTimeout(saveTimer);
-  if (!db) { $('save-status').textContent = 'Use Save project to keep your work'; return; }
-  project.savedAt = Date.now(); const snapshot = clone(project);
-  await new Promise((resolve, reject) => {
+async function persistSnapshot(snapshot) {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction('projects', 'readwrite'); const store = tx.objectStore('projects');
     store.put(snapshot, 'current');
     if (snapshot.libraryId) store.put(snapshot, 'library:' + snapshot.libraryId);
@@ -44,12 +41,30 @@ async function saveNow() {
     tx.onerror = () => reject(tx.error || new Error('Could not save this project.'));
     tx.onabort = () => reject(tx.error || new Error('Could not save this project.'));
   });
-  savedSnapshot = JSON.stringify(snapshot); $('save-status').textContent = 'Saved on this device';
-  renderSavedProjects().catch(() => {});
+}
+async function saveNow() {
+  clearTimeout(saveTimer);
+  if (!db) { $('save-status').textContent = 'Use Save project to keep your work'; return; }
+  project.savedAt = Date.now(); const snapshot = clone(project); const folder = projectFolder;
+  saveQueue = saveQueue.catch(() => {}).then(async () => {
+    await persistSnapshot(snapshot);
+    if (folder && window.desktop?.saveFolderProject) {
+      const saved = await desktop.saveFolderProject(snapshot);
+      snapshot.folderFileName = saved.fileName;
+      if (project.libraryId === snapshot.libraryId && projectFolder === folder) project.folderFileName = saved.fileName;
+      await persistSnapshot(snapshot);
+    }
+    if (project.libraryId === snapshot.libraryId) {
+      savedSnapshot = JSON.stringify(snapshot);
+      $('save-status').textContent = folder ? 'Saved in project folder' : 'Saved on this device';
+    }
+    renderSavedProjects().catch(() => {});
+  });
+  return saveQueue;
 }
 function scheduleSave() {
   $('save-status').textContent = 'Saving on this device…'; clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveNow().catch(() => { $('save-status').textContent = 'Autosave unavailable · save a project file'; }), 350);
+  saveTimer = setTimeout(() => saveNow().catch(() => { $('save-status').textContent = 'Could not save to the project folder'; }), 350);
 }
 async function loadImage(src) {
   if (!src) return null;
@@ -100,7 +115,7 @@ function syncControls() {
   $('delete-slide').disabled = project.slides.length === 1; $('add-slide').disabled = project.slides.length >= 20; $('duplicate').disabled = project.slides.length >= 20;
   $('move-left').disabled = selected === 0; $('move-right').disabled = selected === project.slides.length - 1;
   document.querySelectorAll('#projects-list button[data-id]').forEach(button => {
-    const active = button.dataset.id === project.libraryId;
+    const active = button.dataset.id === (projectFolder ? project.folderFileName : project.libraryId);
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
 }
@@ -150,8 +165,8 @@ async function seedFunTechProjects() {
     await saveLibraryEntry(value);
   }
 }
-async function renderSavedProjects() {
-  if (!db) return;
+async function legacyProjects() {
+  if (!db) return [];
   const values = await new Promise((resolve, reject) => {
     const request = db.transaction('projects').objectStore('projects').getAll();
     request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
@@ -161,8 +176,51 @@ async function renderSavedProjects() {
     const previous = byId.get(value.libraryId);
     if (!previous || (value.savedAt || 0) >= (previous.savedAt || 0)) byId.set(value.libraryId, value);
   });
+  return [...byId.values()];
+}
+async function migrateProjectsToFolder() {
+  if (!projectFolder || !window.desktop?.listFolderProjects) return;
+  const existing = await desktop.listFolderProjects();
+  const byId = new Map(existing.filter(item => item.libraryId).map(item => [item.libraryId, item]));
+  for (const value of await legacyProjects()) {
+    const match = byId.get(value.libraryId);
+    if (match && match.savedAt >= (value.savedAt || 0)) continue;
+    const copy = clone(value);
+    copy.folderFileName = match ? match.fileName : '';
+    const saved = await desktop.saveFolderProject(copy);
+    if (project.libraryId === copy.libraryId) project.folderFileName = saved.fileName;
+    byId.set(copy.libraryId, { fileName: saved.fileName, libraryId: copy.libraryId, savedAt: copy.savedAt || 0 });
+  }
+}
+function updateFolderLabel() {
+  const label = projectFolder || (window.desktop ? 'Choose a folder with Open' : 'Saved in this browser');
+  $('projects-folder-path').textContent = label; $('projects-folder-path').title = label;
+  $('project-dialog-folder-path').textContent = label; $('project-dialog-folder-path').title = label;
+}
+async function chooseProjectFolder() {
+  if (!window.desktop?.chooseProjectFolder) return true;
+  await saveNow();
+  const previous = projectFolder;
+  const chosen = await desktop.chooseProjectFolder();
+  if (!chosen) return false;
+  projectFolder = chosen;
+  if (previous !== chosen) {
+    project.folderFileName = '';
+    await migrateProjectsToFolder();
+  }
+  updateFolderLabel();
+  await renderSavedProjects();
+  return true;
+}
+async function ensureProjectFolder() {
+  if (projectFolder || !window.desktop?.chooseProjectFolder) return true;
+  return chooseProjectFolder();
+}
+async function renderSavedProjects() {
+  if (!db) return;
+  updateFolderLabel();
   const featuredOrder = new Map(featuredProjects.map((entry, index) => [entry.slug, index]));
-  const projects = [...byId.values()].sort((a, b) => {
+  const projects = (projectFolder && window.desktop?.listFolderProjects ? await desktop.listFolderProjects() : await legacyProjects()).sort((a, b) => {
     const ai = featuredOrder.has(a.libraryId) ? featuredOrder.get(a.libraryId) : Infinity;
     const bi = featuredOrder.has(b.libraryId) ? featuredOrder.get(b.libraryId) : Infinity;
     return ai - bi || (b.savedAt || 0) - (a.savedAt || 0);
@@ -170,12 +228,12 @@ async function renderSavedProjects() {
   savedProjectsCache = projects;
   const list = $('projects-list'); list.replaceChildren();
   projects.forEach((entry, index) => {
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = entry.libraryId;
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = projectFolder ? entry.fileName : entry.libraryId;
     button.setAttribute('aria-label', `Open ${entry.name}`);
     const number = document.createElement('span'); number.className = 'collection-number'; number.textContent = String(index + 1).padStart(2, '0');
     const label = document.createElement('span'); label.className = 'collection-label'; label.textContent = entry.name || 'Untitled carousel';
-    const count = document.createElement('small'); count.textContent = `${entry.slides.length} slides`;
-    button.append(number, label, count); button.onclick = () => openSavedProject(entry.libraryId); list.append(button);
+    const count = document.createElement('small'); count.textContent = `${Array.isArray(entry.slides) ? entry.slides.length : entry.slides} slides`;
+    button.append(number, label, count); button.onclick = () => openSavedProject(button.dataset.id); list.append(button);
   });
   $('projects-count').textContent = `${projects.length} project${projects.length === 1 ? '' : 's'}`;
   syncControls();
@@ -185,12 +243,12 @@ function renderProjectPicker() {
   const query = $('project-search').value.trim().toLocaleLowerCase();
   const list = $('project-picker-list'); list.replaceChildren();
   savedProjectsCache.filter(entry => (entry.name || '').toLocaleLowerCase().includes(query)).forEach(entry => {
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = entry.libraryId;
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = projectFolder ? entry.fileName : entry.libraryId;
     button.setAttribute('aria-label', `Open ${entry.name}`);
     const label = document.createElement('span'); label.className = 'collection-label'; label.textContent = entry.name || 'Untitled carousel';
-    const count = document.createElement('small'); count.textContent = `${entry.slides.length} slides`;
+    const count = document.createElement('small'); count.textContent = `${Array.isArray(entry.slides) ? entry.slides.length : entry.slides} slides`;
     button.append(label, count);
-    button.onclick = async () => { if (await openSavedProject(entry.libraryId)) $('project-dialog').close(); };
+    button.onclick = async () => { if (await openSavedProject(button.dataset.id)) $('project-dialog').close(); };
     list.append(button);
   });
   if (!list.childElementCount) {
@@ -199,6 +257,7 @@ function renderProjectPicker() {
 }
 async function showProjectPicker() {
   try {
+    if (!await ensureProjectFolder()) return;
     await renderSavedProjects();
     $('project-search').value = '';
     renderProjectPicker();
@@ -209,8 +268,9 @@ async function showProjectPicker() {
 async function openSavedProject(id) {
   try {
     await saveNow();
-    const value = await savedLibraryProject(id);
+    const value = projectFolder && window.desktop?.openFolderProject ? await desktop.openFolderProject(id) : await savedLibraryProject(id);
     if (!value) throw new Error('This saved project could not be found.');
+    if (!value.libraryId) value.libraryId = crypto.randomUUID();
     await adopt(value);
     await saveNow();
     switchTab('projects');
@@ -221,7 +281,9 @@ async function openSavedProject(id) {
 async function createProject(value) {
   try {
     await saveNow();
+    if (!await ensureProjectFolder()) return;
     value.libraryId = crypto.randomUUID();
+    value.folderFileName = '';
     await adopt(value);
     await saveNow();
     switchTab('projects');
@@ -232,6 +294,7 @@ function download(blob, name) { const link = document.createElement('a'); const 
 function safeFilename(name) { return (name || 'carousel').replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').slice(0, 100); }
 async function saveProject() {
   try {
+    if (!await ensureProjectFolder()) return;
     if (!project.libraryId) project.libraryId = crypto.randomUUID();
     await saveNow(); await renderSavedProjects(); switchTab('projects'); toast('Project saved in Projects.');
   } catch (error) { toast('Could not save: ' + error.message); }
@@ -243,7 +306,9 @@ async function saveProjectFile() {
   } catch (error) { toast('Could not save file: ' + error.message); }
 }
 async function importProjectFile(value) {
+  if (!await ensureProjectFolder()) return;
   value.libraryId = crypto.randomUUID();
+  value.folderFileName = '';
   await saveNow(); await adopt(value); await saveNow(); switchTab('projects'); toast('Project imported and saved in Projects.');
 }
 async function exportSlides(single = false) {
@@ -307,6 +372,8 @@ $('save-project-file').onclick = saveProjectFile;
 $('new-project').onclick = () => createProject({ ...defaults(), name: 'Untitled carousel' });
 $('navy-starter').onclick = startNavy;
 $('open-project').onclick = showProjectPicker;
+$('change-project-folder').onclick = () => chooseProjectFolder().catch(error => toast('Could not change folder: ' + error.message));
+$('project-dialog-change-folder').onclick = () => chooseProjectFolder().catch(error => toast('Could not change folder: ' + error.message));
 $('project-search').oninput = renderProjectPicker;
 $('project-dialog-import').onclick = () => { $('project-dialog').close(); $('import-project').click(); };
 $('import-project').onclick = async () => { try { if (window.desktop) { const value = await desktop.openProject(); if (value) await importProjectFile(value); } else $('project-file').click(); } catch (error) { toast('Could not open file: ' + error.message); } };
@@ -331,4 +398,25 @@ document.addEventListener('keydown', event => {
 });
 window.FolioSession = { snapshot: () => clone(project) };
 window.addEventListener('beforeunload', event => { if (!window.desktop && savedSnapshot !== JSON.stringify(project)) { event.preventDefault(); event.returnValue = ''; } });
-window.FolioReady = (async () => { try { let saved = await openDB(); await seedFunTechProjects(); if (window.desktop) { const recovery = await desktop.loadRecovery(); if (recovery && (!saved || (recovery.savedAt || 0) > (saved.savedAt || 0))) saved = recovery; } if (!saved && featuredProjects.length) saved = await savedLibraryProject(featuredProjects[0].slug); if (saved) { project = validate(saved); savedSnapshot = JSON.stringify(project); } } catch (_) { $('save-status').textContent = 'Use Save project to keep your work'; } syncControls(); await paint(); await renderSavedProjects(); scheduleSave(); })();
+window.FolioReady = (async () => {
+  try {
+    let saved = await openDB();
+    await seedFunTechProjects();
+    if (window.desktop) {
+      projectFolder = await desktop.getProjectFolder();
+      const recovery = await desktop.loadRecovery();
+      if (recovery && (!saved || (recovery.savedAt || 0) > (saved.savedAt || 0))) saved = recovery;
+    }
+    if (!saved && featuredProjects.length) saved = await savedLibraryProject(featuredProjects[0].slug);
+    if (projectFolder && saved?.libraryId) {
+      const files = await desktop.listFolderProjects();
+      const match = files.find(item => item.fileName === saved.folderFileName) || files.find(item => item.libraryId === saved.libraryId);
+      if (match) {
+        if (Math.max(match.savedAt, match.modifiedAt) >= (saved.savedAt || 0)) saved = await desktop.openFolderProject(match.fileName);
+        else saved.folderFileName = match.fileName;
+      }
+    }
+    if (saved) { project = validate(saved); savedSnapshot = JSON.stringify(project); }
+  } catch (_) { $('save-status').textContent = 'Use Save project to keep your work'; }
+  syncControls(); await paint(); await renderSavedProjects(); scheduleSave();
+})();

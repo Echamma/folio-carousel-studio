@@ -4,15 +4,16 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.2.1.exe`. This is a portable app; installation and an account are not required.
+Open `dist/Folio-Carousel-Studio-1.3.0.exe`. This is a portable app; installation and an account are not required.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 
 ## Create
 
 - Select one of ten editable layouts: Introduction, Text Only, Checklist, Quote, Image Center, Image Left, Image Right, Image Compare, Thank You, and Navy Ribbon.
-- **Projects** opens with ten editable six-slide Fun Tech Facts carousels in the navy ribbon style. Click any project to edit it. The collection is seeded into local project storage once, so your edits remain yours on later launches.
-- **New** creates a new project in Projects. **Save project** (or Ctrl+S) saves the current project there. **Open** shows a searchable picker for saved projects. The app also saves changes automatically, including when switching between projects.
+- **Open** asks you to choose a project folder the first time. Folio remembers it and shows a searchable list of `.folio.json` files in that folder on later opens. Use **Change folder** in Projects or in the picker to select another folder.
+- The ten editable six-slide Fun Tech Facts carousels are added to the chosen folder on first selection, along with any projects previously saved in the app. Existing files with newer saved content are kept.
+- **New** creates a new project file in the chosen folder. **Save project** (or Ctrl+S) and autosave update that file. The app also keeps a local recovery copy.
 - **Open a project file** imports a `.folio.json` file into Projects. **Save a copy to file** writes a portable `.folio.json` backup.
 - **Navy ribbon carousel** in Templates starts an eight-slide square project based on `Untitled.png`: navy background, cream typography, and continuous white rough borders. The first and last slides center their headlines; the middle slides use a heading and body.
 - Write your copy in Slide details. Add, duplicate, reorder, or delete slides using the strip below the canvas. Undo and redo restore edits and slide changes.
@@ -22,7 +23,7 @@ To run from source: `npm install`, then `npm start`. To rebuild the portable exe
 - View the 36 original Figma layout references in the template library. Selecting one applies its format, theme, and layout. The templates are editable recreations inspired by the originals; the outlined text in exported Figma SVGs is not directly editable.
 - Preview the carousel and move through it with the arrow buttons or arrow keys.
 - Export one slide as PNG or the entire carousel as a ZIP containing numbered full-resolution PNGs. A one-slide carousel exports directly as PNG.
-- Every project is stored locally in the app. Export a project file when you want a portable backup or need to move it to another device.
+- Your editable project files live in the selected folder. **Save a copy to file** creates an additional portable backup when you want one.
 
 Everything runs locally. No account, network, API key, or paid service is needed. Original references are bundled, so the app does not depend on the D: drive after it is built. Background texture, swipe cues, copy, images, and brand controls are editable. The app uses preset layouts rather than freeform layer editing.
 
