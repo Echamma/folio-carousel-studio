@@ -5,16 +5,18 @@ const assert = require('node:assert/strict');
 const JSZip = require('jszip');
 process.env.FOLIO_TEST = '1';
 const output = path.join(__dirname, '..', 'test-output');
+const folder = path.join(output, 'smoke-project-folder-' + process.pid);
 const files = ['project.json', 'carousel.zip', 'single.png', 'navy-project.json', 'navy-carousel.zip'];
 app.setPath('userData', path.join(output, 'test-profile-' + process.pid));
 let saveIndex = 0;
 dialog.showSaveDialog = async () => ({ canceled: false, filePath: path.join(output, files[saveIndex++]) });
-dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path.join(output, 'project.json')] });
+dialog.showOpenDialog = async (_, options) => ({ canceled: false, filePaths: [options?.properties?.includes('openDirectory') ? folder : path.join(output, 'project.json')] });
 require('../main.cjs');
 const timeout = setTimeout(() => { console.error('Desktop test timed out'); app.exit(1); }, 60000);
 app.whenReady().then(async () => {
   try {
     await fs.mkdir(output, { recursive: true });
+    await fs.mkdir(folder, { recursive: true });
     const win = BrowserWindow.getAllWindows()[0];
     if (win.webContents.isLoading()) await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
     const results = await win.webContents.executeJavaScript(`(async () => {
