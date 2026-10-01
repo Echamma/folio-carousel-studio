@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "Why Bluetooth Has a Viking Name",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "f9950929-7324-4929-8044-ac499ec362fb",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Why is it called\nBluetooth?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "7a71743d-922d-4072-9ed9-323e413381f2",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "A king, not a gadget",
+      "body": "The name comes from Harald “Bluetooth” Gormsson, a king of Denmark and Norway.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "d4b355d0-fa59-4849-b3db-14731dc54e33",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "A 1996 codename",
+      "body": "Companies planning a wireless standard used his name while the technology was taking shape.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "d0cc9996-5ec9-4ef7-8ecc-462901625984",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "The name stuck",
+      "body": "Bluetooth began as a temporary name, but it became the one everyone knew.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "5e927ac3-10b9-4741-bc66-88c0791478b0",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Look at the logo",
+      "body": "The symbol combines runes for Harald’s initials: H and B.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "e3081202-a3ba-4b0a-a4a3-75b9c947d1b5",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "A modern link\nwith Viking roots.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

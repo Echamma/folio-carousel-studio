@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "What HTTPS Really Protects",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "ddff66ad-7bd7-409d-b788-582657e49b5a",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "What does HTTPS\nactually do?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "cc63a6f4-7ef5-4330-b2d6-b1427b203b7b",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "It uses TLS",
+      "body": "TLS protects the connection between your browser and a website.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "a7569f1e-d4e3-4816-b7b5-9fd9bb837421",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "It encrypts data",
+      "body": "People watching the network cannot simply read the protected traffic.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "8a4d2521-db10-4dc8-9329-b0b15e5c74b9",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "It checks changes",
+      "body": "TLS helps detect if data was altered while in transit.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "10a27ad2-6a02-4b94-9a57-38d10a0b02a2",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "It checks identity",
+      "body": "Your browser verifies a certificate to help confirm the server it reached.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "1e01fd8d-3a88-4f60-9fc7-c176f4fbae06",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Secure connection.\nStill check the site.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

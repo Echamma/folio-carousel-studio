@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "How a Tap Starts an Action",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "c51a5a98-5029-40c7-815f-94f5e82ec8a7",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "How does a tap\nstart an action?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "1464b472-8340-4900-a170-44499914db2a",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "A tiny radio link",
+      "body": "NFC lets compatible devices communicate when they are very close.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "75fe8a7f-4820-403b-bb92-27c6f20463df",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "You see it in payments",
+      "body": "A tap can begin a contactless payment interaction.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "fb65585e-434b-4b54-b2a9-b63a2df9970d",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Tags can do more",
+      "body": "A phone can read an NFC tag that points to information or an action.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "1b325881-ead9-4dc0-a774-eb82e42d1d7f",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Some tags need no battery",
+      "body": "A nearby reader can provide the energy a passive tag needs.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "8e8fe10d-5217-4d2e-a271-697074aef9d4",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "A small tap.\nA useful connection.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

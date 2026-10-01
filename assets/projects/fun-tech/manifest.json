@@ -1,0 +1,62 @@
+[
+  {
+    "slug": "01-bluetooth",
+    "name": "Why Bluetooth Has a Viking Name",
+    "slides": 6,
+    "source": "https://www.bluetooth.com/about-us/bluetooth-origin/"
+  },
+  {
+    "slug": "02-gps",
+    "name": "How GPS Finds You",
+    "slides": 6,
+    "source": "https://www.gps.gov/gps-and-telling-time"
+  },
+  {
+    "slug": "03-dns",
+    "name": "What Happens When You Type a Website Name",
+    "slides": 6,
+    "source": "https://www.icann.org/resources/pages/dns-2022-09-13-en"
+  },
+  {
+    "slug": "04-cookies",
+    "name": "Why Websites Remember You",
+    "slides": 6,
+    "source": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies"
+  },
+  {
+    "slug": "05-browser-cache",
+    "name": "Why Pages Can Load Faster the Second Time",
+    "slides": 6,
+    "source": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching"
+  },
+  {
+    "slug": "06-https",
+    "name": "What HTTPS Really Protects",
+    "slides": 6,
+    "source": "https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Transport_Layer_Security"
+  },
+  {
+    "slug": "07-cloud",
+    "name": "Where the Cloud Actually Is",
+    "slides": 6,
+    "source": "https://csrc.nist.gov/glossary/term/cloud_computing"
+  },
+  {
+    "slug": "08-pixels",
+    "name": "What a Pixel Really Is",
+    "slides": 6,
+    "source": "https://developer.mozilla.org/en-US/docs/Glossary/Pixel"
+  },
+  {
+    "slug": "09-nfc",
+    "name": "How a Tap Starts an Action",
+    "slides": 6,
+    "source": "https://nfc-forum.org/learn/nfc-technology/"
+  },
+  {
+    "slug": "10-binary",
+    "name": "How Zero and One Become Everything",
+    "slides": 6,
+    "source": "https://www.ibm.com/think/topics/qubit"
+  }
+]

@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "What a Pixel Really Is",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "b1dbdb24-ae58-4c35-aa79-f59d30548946",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "What is a pixel?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "58282a55-7b77-4416-9bd9-0139f187bdd0",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Zoom far into a photo",
+      "body": "A digital image is built from a grid of tiny picture elements.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "4524f4ca-b645-49e9-ac34-a4e6f92dd00d",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Each one carries color",
+      "body": "Together, those values form the picture you see.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "c45ee58f-5cc8-4651-a571-3f096a362621",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Resolution counts them",
+      "body": "An image’s width and height tell you how many pixels it contains.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "90efe1b3-ec9b-4f9f-816e-aa2c3e4b072e",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Screens map them",
+      "body": "One image pixel does not always match one physical screen pixel.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "19afb8cc-8269-4811-a975-7b1f85c7db27",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Small pieces.\nBig picture.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

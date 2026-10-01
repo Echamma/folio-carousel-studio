@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "How Zero and One Become Everything",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "abb44551-f6e2-49c7-b24c-5ce614f89bda",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "How do 0 and 1\nbecome so much?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "371014f4-13e3-43f8-836d-2941b93eefed",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Start with one bit",
+      "body": "A bit has two possible values: 0 or 1.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "ab0a2952-03f7-4dd8-9317-4eba01b0d598",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Two bits, four patterns",
+      "body": "00, 01, 10 and 11 are four different combinations.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "42a82e91-e9c9-4a34-b987-96ee9510092a",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Eight bits make a byte",
+      "body": "A byte is a common unit for storing digital data.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "895da97d-d4fd-419d-86d0-6bae4a812792",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Patterns can encode",
+      "body": "Text, pictures and sound can all be represented as bits.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "64d0e2e7-35a0-4836-9f55-63fab341cf94",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Simple pieces.\nEndless patterns.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

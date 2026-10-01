@@ -1,13 +1,13 @@
 {
   "name": "folio-carousel-studio",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "An offline Instagram carousel desktop studio inspired by your Figma templates",
   "author": "Folio",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable",
-    "test": "electron tests/smoke.cjs && electron tests/close.cjs"
+    "test": "electron tests/smoke.cjs && electron tests/close.cjs && electron tests/projects.cjs"
   },
   "dependencies": {
     "jszip": "^3.10.1"
@@ -36,7 +36,7 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "Folio-Carousel-Studio-1.1.1.exe"
+      "artifactName": "Folio-Carousel-Studio-${version}.exe"
     }
   }
 }

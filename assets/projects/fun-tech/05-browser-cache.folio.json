@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "Why Pages Can Load Faster the Second Time",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "40c86a18-abac-4de6-b767-23b63a800019",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Why is the second\nload often faster?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "53baaa23-2d6d-4057-82ca-e5d41e2fe2b8",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Your browser can save",
+      "body": "It may keep a copy of a web response after the first visit.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "830f3826-5a77-4f35-8056-1f92898bbbbb",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "That copy is a cache",
+      "body": "A cache holds data that may be useful again soon.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "20decf60-801b-44ca-9032-556ca08662d8",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Reuse saves work",
+      "body": "If the saved response is usable, the browser may skip a full download.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "288bbb87-290d-4e55-b448-8cbdd08e0064",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Copies can age",
+      "body": "A stale cache can briefly show older content until it is refreshed.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "df293e27-cd38-48be-90eb-596ee094ff4f",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Speed sometimes\nhas a memory.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

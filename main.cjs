@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const JSZip = require('jszip');
+const funTechProjects = require('./assets/projects/fun-tech/manifest.json');
+const funTechIds = new Set(funTechProjects.map(project => project.slug));
 let window;
 let closing = false;
 let allowClose = false;
@@ -54,6 +56,12 @@ ipcMain.handle('open-project', async () => {
   const stat = await fs.stat(result.filePaths[0]);
   if (stat.size > 150 * 1024 * 1024) throw new Error('Project exceeds the 150 MB limit.');
   return JSON.parse(await fs.readFile(result.filePaths[0], 'utf8'));
+});
+ipcMain.handle('list-fun-tech-projects', () => funTechProjects.map(({ slug, name, slides }) => ({ slug, name, slides })));
+ipcMain.handle('open-fun-tech-project', async (_, slug) => {
+  if (typeof slug !== 'string' || !funTechIds.has(slug)) throw new Error('This collection project is unavailable.');
+  const file = path.join(__dirname, 'assets', 'projects', 'fun-tech', slug + '.folio.json');
+  return JSON.parse(await fs.readFile(file, 'utf8'));
 });
 ipcMain.handle('export-slides', async (_, { name, slides }) => {
   if (!Array.isArray(slides) || slides.length < 1 || slides.length > 20 || slides.some(s => !/^data:image\/png;base64,/.test(s))) throw new Error('Invalid export.');

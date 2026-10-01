@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "Where the Cloud Actually Is",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "5f030e25-3db7-4cc5-8d6e-7004b4b5bbf5",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Where is\nthe cloud?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "32b2db56-3409-4635-85df-b3d16171d9fe",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "On real computers",
+      "body": "Cloud services run on physical computing infrastructure.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "9163246e-6921-4a20-bcf7-fc339155de31",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Reached by a network",
+      "body": "You use remote storage, software or processing through a connection.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "9ecb2722-2949-4ae4-96fb-97a22b17e48c",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Resources are shared",
+      "body": "Providers can pool computing resources for many customers.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "7838b3f5-f9ee-4118-8a2f-79313f7a5f2b",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Capacity can change",
+      "body": "Cloud resources can often be added or released as demand changes.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "f752e49d-067a-411a-b49e-da60e8b10683",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "The cloud is\ncomputing on demand.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}
