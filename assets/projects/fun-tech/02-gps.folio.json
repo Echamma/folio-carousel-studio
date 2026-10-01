@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "How GPS Finds You",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "46c52932-579b-4f0d-977e-53b357e7427f",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "How does GPS know\nwhere you are?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "5be236a2-ade4-46ef-af78-16a3aac60b2c",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Satellites broadcast",
+      "body": "Your phone receives their signals. GPS satellites do not need a message from your phone.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "0116f1f1-6151-4ddb-b040-d8b0b8ed7622",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Each signal has time",
+      "body": "Satellites carry precise clocks and transmit time information.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "4e584113-4476-4481-8bbd-a0a9f0e90872",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Time becomes distance",
+      "body": "The receiver compares when a signal was sent with when it arrived.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "b6adeb36-1da9-4911-916e-5f8d6af95322",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Several signals help",
+      "body": "Signals from at least four satellites let a receiver solve for position and time.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "3903c9e7-d4c2-44b3-80be-f539beafe989",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Location is a\ntiming problem.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "What Happens When You Type a Website Name",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "da299253-5841-4742-b46d-1a96011465a0",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "What happens when\nyou type a URL?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "97a662ac-0607-4824-936f-65e536db754d",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Names are for us",
+      "body": "A website name is easier to remember than a numeric network address.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "ea254ff6-98a0-4514-a0e1-454a135e56a1",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Devices use addresses",
+      "body": "Computers use IP addresses to find services across a network.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "f61540b8-01f2-45a0-b1ff-aeb955866a4a",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "DNS connects them",
+      "body": "The Domain Name System helps look up the address linked to a domain name.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "46009e70-51f5-47f8-b371-653778ac9192",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Then the page can load",
+      "body": "With an address, your browser can contact the website’s server.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "7564994c-f11d-4ded-b90a-129837563da8",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "DNS makes names\nuseful online.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}

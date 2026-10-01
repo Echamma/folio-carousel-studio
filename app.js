@@ -20,7 +20,7 @@ const navyProject = () => ({ version: 1, name: 'QR Code — Navy Ribbon', format
   ['Sale:', 'Add your subscription offer, price, and terms here.'],
   ['Fill out the\nform in our\nBio', '']
 ].map(([title, body]) => createSlide('navy-ribbon', { eyebrow: '', title, body, titleSize: body ? 64 : 98, swipe: false })) });
-let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false;
+let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false; let featuredProjects = [];
 const history = []; const future = []; const imageCache = new Map();
 function toast(message) { $('toast').textContent = message; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3500); }
 function current() { return project.slides[selected]; }
@@ -32,14 +32,24 @@ async function openDB() {
   db = await new Promise((resolve, reject) => { const req = indexedDB.open('folio-studio', 1); req.onupgradeneeded = () => req.result.createObjectStore('projects'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
   return new Promise((resolve, reject) => { const req = db.transaction('projects').objectStore('projects').get('current'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 }
+async function saveNow() {
+  clearTimeout(saveTimer);
+  if (!db) { $('save-status').textContent = 'Use Save project to keep your work'; return; }
+  project.savedAt = Date.now(); const snapshot = clone(project);
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('projects', 'readwrite'); const store = tx.objectStore('projects');
+    store.put(snapshot, 'current');
+    if (snapshot.libraryId) store.put(snapshot, 'library:' + snapshot.libraryId);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('Could not save this project.'));
+    tx.onabort = () => reject(tx.error || new Error('Could not save this project.'));
+  });
+  savedSnapshot = JSON.stringify(snapshot); $('save-status').textContent = 'Saved on this device';
+  renderSavedProjects().catch(() => {});
+}
 function scheduleSave() {
   $('save-status').textContent = 'Saving on this device…'; clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    if (!db) { $('save-status').textContent = 'Use Save project to keep your work'; return; }
-    project.savedAt = Date.now(); const snapshot = clone(project); const tx = db.transaction('projects', 'readwrite'); tx.objectStore('projects').put(snapshot, 'current');
-    tx.oncomplete = () => { savedSnapshot = JSON.stringify(snapshot); $('save-status').textContent = 'Saved on this device'; };
-    tx.onerror = () => { $('save-status').textContent = 'Autosave unavailable · save a project file'; };
-  }, 350);
+  saveTimer = setTimeout(() => saveNow().catch(() => { $('save-status').textContent = 'Autosave unavailable · save a project file'; }), 350);
 }
 async function loadImage(src) {
   if (!src) return null;
@@ -89,6 +99,10 @@ function syncControls() {
   $('items-label').hidden = s.layout !== 'checklist'; $('image-controls').hidden = !s.layout.includes('image') && s.layout !== 'compare'; $('image2-label').hidden = s.layout !== 'compare';
   $('delete-slide').disabled = project.slides.length === 1; $('add-slide').disabled = project.slides.length >= 20; $('duplicate').disabled = project.slides.length >= 20;
   $('move-left').disabled = selected === 0; $('move-right').disabled = selected === project.slides.length - 1;
+  document.querySelectorAll('#projects-list button[data-id]').forEach(button => {
+    const active = button.dataset.id === project.libraryId;
+    button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
+  });
 }
 function selectSlide(i) { clearTimeout(changeTimer); changeTimer = null; selected = i; syncControls(); paint(); }
 function addSlide() { if (project.slides.length >= 20) return toast('A carousel can contain up to 20 slides.'); edit(() => { const slide = current().layout === 'navy-ribbon' ? createSlide('navy-ribbon', { eyebrow: '', title: 'Your next idea', body: 'Add a new chapter to your story.', titleSize: 64, swipe: false }) : createSlide(); project.slides.splice(selected + 1, 0, slide); selected++; }); }
@@ -111,13 +125,98 @@ function validate(value) {
   return value;
 }
 async function adopt(value) { const next = validate(value); record(); project = next; selected = 0; imageCache.clear(); syncControls(); finishChange(); toast('Project opened. Pick up where you left off.'); }
+async function savedLibraryProject(id) {
+  if (!db) return null;
+  return new Promise((resolve, reject) => {
+    const request = db.transaction('projects').objectStore('projects').get('library:' + id);
+    request.onsuccess = () => resolve(request.result || null); request.onerror = () => reject(request.error);
+  });
+}
+async function saveLibraryEntry(value) {
+  if (!db) throw new Error('Project storage is unavailable.');
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('projects', 'readwrite'); tx.objectStore('projects').put(value, 'library:' + value.libraryId);
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+  });
+}
+async function seedFunTechProjects() {
+  if (!window.desktop?.listFunTechProjects || !db) return;
+  featuredProjects = await desktop.listFunTechProjects();
+  for (const entry of featuredProjects) {
+    if (await savedLibraryProject(entry.slug)) continue;
+    const value = await desktop.openFunTechProject(entry.slug);
+    value.libraryId = entry.slug;
+    value.savedAt = Date.now();
+    await saveLibraryEntry(value);
+  }
+}
+async function renderSavedProjects() {
+  if (!db) return;
+  const values = await new Promise((resolve, reject) => {
+    const request = db.transaction('projects').objectStore('projects').getAll();
+    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+  });
+  const byId = new Map();
+  values.filter(value => value && value.libraryId && Array.isArray(value.slides)).forEach(value => {
+    const previous = byId.get(value.libraryId);
+    if (!previous || (value.savedAt || 0) >= (previous.savedAt || 0)) byId.set(value.libraryId, value);
+  });
+  const featuredOrder = new Map(featuredProjects.map((entry, index) => [entry.slug, index]));
+  const projects = [...byId.values()].sort((a, b) => {
+    const ai = featuredOrder.has(a.libraryId) ? featuredOrder.get(a.libraryId) : Infinity;
+    const bi = featuredOrder.has(b.libraryId) ? featuredOrder.get(b.libraryId) : Infinity;
+    return ai - bi || (b.savedAt || 0) - (a.savedAt || 0);
+  });
+  const list = $('projects-list'); list.replaceChildren();
+  projects.forEach((entry, index) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = entry.libraryId;
+    button.setAttribute('aria-label', `Open ${entry.name}`);
+    const number = document.createElement('span'); number.className = 'collection-number'; number.textContent = String(index + 1).padStart(2, '0');
+    const label = document.createElement('span'); label.className = 'collection-label'; label.textContent = entry.name || 'Untitled carousel';
+    const count = document.createElement('small'); count.textContent = `${entry.slides.length} slides`;
+    button.append(number, label, count); button.onclick = () => openSavedProject(entry.libraryId); list.append(button);
+  });
+  $('projects-count').textContent = `${projects.length} project${projects.length === 1 ? '' : 's'}`;
+  syncControls();
+}
+async function openSavedProject(id) {
+  try {
+    await saveNow();
+    const value = await savedLibraryProject(id);
+    if (!value) throw new Error('This saved project could not be found.');
+    await adopt(value);
+    await saveNow();
+    switchTab('projects');
+    await renderSavedProjects();
+  } catch (error) { toast('Could not open project: ' + error.message); }
+}
+async function createProject(value) {
+  try {
+    await saveNow();
+    value.libraryId = crypto.randomUUID();
+    await adopt(value);
+    await saveNow();
+    switchTab('projects');
+    toast('New project saved in Projects.');
+  } catch (error) { toast('Could not create project: ' + error.message); }
+}
 function download(blob, name) { const link = document.createElement('a'); const url = URL.createObjectURL(blob); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 3000); }
 function safeFilename(name) { return (name || 'carousel').replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').slice(0, 100); }
 async function saveProject() {
-  const snapshot = clone(project);
-  try { if (window.desktop) { if (await desktop.saveProject(snapshot)) { savedSnapshot = JSON.stringify(snapshot); toast('Editable project saved.'); } }
-    else { download(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), safeFilename(snapshot.name) + '.folio.json'); savedSnapshot = JSON.stringify(snapshot); toast('Editable project downloaded.'); }
+  try {
+    if (!project.libraryId) project.libraryId = crypto.randomUUID();
+    await saveNow(); await renderSavedProjects(); switchTab('projects'); toast('Project saved in Projects.');
   } catch (error) { toast('Could not save: ' + error.message); }
+}
+async function saveProjectFile() {
+  const snapshot = clone(project);
+  try { if (window.desktop) { if (await desktop.saveProject(snapshot)) toast('Project file saved.'); }
+    else { download(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), safeFilename(snapshot.name) + '.folio.json'); toast('Project file downloaded.'); }
+  } catch (error) { toast('Could not save file: ' + error.message); }
+}
+async function importProjectFile(value) {
+  value.libraryId = crypto.randomUUID();
+  await saveNow(); await adopt(value); await saveNow(); switchTab('projects'); toast('Project imported and saved in Projects.');
 }
 async function exportSlides(single = false) {
   if (busy) return; busy = true; $('export').disabled = true; $('export-slide').disabled = true; $('export').textContent = 'Exporting…';
@@ -158,7 +257,7 @@ function references() {
   navy.append(image, document.createTextNode('Navy ribbon · start the 8-slide carousel ↗'));
   navy.onclick = () => { startNavy(); $('reference-dialog').close(); }; $('reference-grid').append(navy);
 }
-function startNavy() { edit(() => { project = navyProject(); selected = 0; }); toast('Navy ribbon carousel ready. Every slide is editable. Undo restores your previous project.'); }
+function startNavy() { return createProject(navyProject()); }
 async function showPreview() { render($('preview-canvas'), project.slides[previewIndex], project, previewIndex, await allImages()); $('preview-count').textContent = `${previewIndex + 1} / ${project.slides.length}`; $('preview-prev').disabled = previewIndex === 0; $('preview-next').disabled = previewIndex === project.slides.length - 1; }
 ['eyebrow', 'title', 'body'].forEach(id => $(id).addEventListener('input', () => { markTextEdit(); current()[id] = $(id).value; finishChange(); }));
 $('items').addEventListener('input', () => { markTextEdit(); current().items = $('items').value.split('\n').filter(s => s.trim()).slice(0, 5); finishChange(); });
@@ -176,17 +275,20 @@ $('undo').onclick = () => undo(); $('redo').onclick = () => undo(true);
 $('image-file').onchange = () => uploadImage($('image-file'), 'image'); $('image2-file').onchange = () => uploadImage($('image2-file'), 'image2');
 $('remove-image').onclick = () => edit(() => { current().image = ''; current().image2 = ''; });
 $('save-project').onclick = saveProject;
-$('new-project').onclick = () => { edit(() => { project = defaults(); selected = 0; }); toast('New project ready. Undo restores your previous project.'); };
+$('save-project-file').onclick = saveProjectFile;
+$('new-project').onclick = () => createProject({ ...defaults(), name: 'Untitled carousel' });
 $('navy-starter').onclick = startNavy;
-$('open-project').onclick = async () => { try { if (window.desktop) { const value = await desktop.openProject(); if (value) await adopt(value); } else $('project-file').click(); } catch (error) { toast('Could not open: ' + error.message); } };
-$('project-file').onchange = async () => { const file = $('project-file').files[0]; if (!file) return; try { if (file.size > 150 * 1024 * 1024) throw new Error('Project exceeds 150 MB.'); await adopt(JSON.parse(await file.text())); } catch (error) { toast('Could not open: ' + error.message); } finally { $('project-file').value = ''; } };
+$('open-project').onclick = () => { switchTab('projects'); $('projects-list').scrollIntoView({ block: 'nearest' }); };
+$('import-project').onclick = async () => { try { if (window.desktop) { const value = await desktop.openProject(); if (value) await importProjectFile(value); } else $('project-file').click(); } catch (error) { toast('Could not open file: ' + error.message); } };
+$('project-file').onchange = async () => { const file = $('project-file').files[0]; if (!file) return; try { if (file.size > 150 * 1024 * 1024) throw new Error('Project exceeds 150 MB.'); await importProjectFile(JSON.parse(await file.text())); } catch (error) { toast('Could not open: ' + error.message); } finally { $('project-file').value = ''; } };
 $('export').onclick = () => exportSlides(); $('export-slide').onclick = () => exportSlides(true);
 $('references').onclick = () => { $('ref-format').value = project.format === 'square' ? 'Square' : 'Portrait'; $('ref-theme').value = project.theme === 'dark' ? 'Dark' : 'Light'; references(); $('reference-dialog').showModal(); };
 $('ref-format').onchange = references; $('ref-theme').onchange = references;
 $('preview').onclick = async () => { previewIndex = selected; await showPreview(); $('preview-dialog').showModal(); };
 $('preview-prev').onclick = () => { if (previewIndex > 0) { previewIndex--; showPreview(); } }; $('preview-next').onclick = () => { if (previewIndex < project.slides.length - 1) { previewIndex++; showPreview(); } };
 document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => $(button.dataset.close).close());
-['templates', 'brand'].forEach(tab => $(tab + '-tab').onclick = () => { ['templates', 'brand'].forEach(name => { $(name + '-panel').hidden = name !== tab; $(name + '-tab').classList.toggle('active', name === tab); $(name + '-tab').setAttribute('aria-selected', String(name === tab)); }); });
+function switchTab(tab) { ['projects', 'templates', 'brand'].forEach(name => { $(name + '-panel').hidden = name !== tab; $(name + '-tab').classList.toggle('active', name === tab); $(name + '-tab').setAttribute('aria-selected', String(name === tab)); }); }
+['projects', 'templates', 'brand'].forEach(tab => $(tab + '-tab').onclick = () => switchTab(tab));
 document.addEventListener('keydown', event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveProject(); }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(event.shiftKey); }
@@ -198,4 +300,4 @@ document.addEventListener('keydown', event => {
 });
 window.FolioSession = { snapshot: () => clone(project) };
 window.addEventListener('beforeunload', event => { if (!window.desktop && savedSnapshot !== JSON.stringify(project)) { event.preventDefault(); event.returnValue = ''; } });
-(async () => { try { let saved = await openDB(); if (window.desktop) { const recovery = await desktop.loadRecovery(); if (recovery && (!saved || (recovery.savedAt || 0) > (saved.savedAt || 0))) saved = recovery; } if (saved) { project = validate(saved); savedSnapshot = JSON.stringify(project); } } catch (_) { $('save-status').textContent = 'Use Save project to keep your work'; } syncControls(); await paint(); scheduleSave(); })();
+(async () => { try { let saved = await openDB(); await seedFunTechProjects(); if (window.desktop) { const recovery = await desktop.loadRecovery(); if (recovery && (!saved || (recovery.savedAt || 0) > (saved.savedAt || 0))) saved = recovery; } if (!saved && featuredProjects.length) saved = await savedLibraryProject(featuredProjects[0].slug); if (saved) { project = validate(saved); savedSnapshot = JSON.stringify(project); } } catch (_) { $('save-status').textContent = 'Use Save project to keep your work'; } syncControls(); await paint(); await renderSavedProjects(); scheduleSave(); })();

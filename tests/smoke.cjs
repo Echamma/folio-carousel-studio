@@ -6,7 +6,7 @@ const JSZip = require('jszip');
 process.env.FOLIO_TEST = '1';
 const output = path.join(__dirname, '..', 'test-output');
 const files = ['project.json', 'carousel.zip', 'single.png', 'navy-project.json', 'navy-carousel.zip'];
-app.setPath('userData', path.join(output, 'test-profile'));
+app.setPath('userData', path.join(output, 'test-profile-' + process.pid));
 let saveIndex = 0;
 dialog.showSaveDialog = async () => ({ canceled: false, filePath: path.join(output, files[saveIndex++]) });
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path.join(output, 'project.json')] });
@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
       project = defaults(); selected = 0; syncControls(); await paint(); scheduleSave();
       await new Promise(resolve=>setTimeout(resolve,600)); assert($('save-status').textContent === 'Saved on this device', 'Autosave completes');
       assert($('slide-count').textContent === '5 slides' && $('slide-caption').textContent === 'Slide 01', 'Restored project has consistent controls');
-      $('navy-starter').click(); assert(project.slides.length === 8 && project.format === 'square' && project.slides.every(s=>s.layout === 'navy-ribbon'), 'Navy starter creates eight editable square slides');
+      await startNavy(); assert(project.slides.length === 8 && project.format === 'square' && project.slides.every(s=>s.layout === 'navy-ribbon'), 'Navy starter creates eight editable square slides');
       addSlide(); assert(project.slides.length === 9 && current().layout === 'navy-ribbon', 'Additional navy slides keep the selected style'); undo(); assert(project.slides.length === 8 && selected === 0, 'Undo adding a navy slide');
       const navyCanvas = document.createElement('canvas'); render(navyCanvas, current(), project, 0);
       const navyCtx = navyCanvas.getContext('2d'); assert(Array.from(navyCtx.getImageData(0,0,1,1).data).join(',') === '60,65,93,255', 'Navy background matches the reference');

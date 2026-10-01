@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "name": "Why Websites Remember You",
+  "format": "square",
+  "theme": "dark",
+  "accent": "#F9DEC9",
+  "brand": "LELLO TECHNOLOGIES",
+  "handle": "",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "b6d126c2-75d6-4af9-8795-13785c2d98ad",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Why do websites\nremember you?",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 94,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "6ad558a8-5c21-43dd-8049-6bdb6411314a",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "A tiny stored value",
+      "body": "A site can ask your browser to save a small piece of information called a cookie.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "8df93fdb-164e-4197-bf26-4dba17d1cf27",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Your browser returns it",
+      "body": "On later matching requests, the browser can send that cookie back.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "049f2a70-31ad-4cef-be25-6117e03056ad",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "That can keep a session",
+      "body": "A cookie can help a website recognize that you already signed in.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "5d4c78af-fbac-40ad-a8e3-3589c84807d8",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Uses vary",
+      "body": "Cookies may save preferences, support site features, or be used for tracking.",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 64,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "dc987e2f-3a05-4506-8d49-508dad1d62e8",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "Same technology.\nDifferent purposes.",
+      "body": "",
+      "items": [],
+      "image": "",
+      "image2": "",
+      "titleSize": 86,
+      "texture": true,
+      "swipe": true
+    }
+  ]
+}
