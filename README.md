@@ -4,7 +4,7 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.2.0.exe`. This is a portable app; installation and an account are not required.
+Open `dist/Folio-Carousel-Studio-1.2.1.exe`. This is a portable app; installation and an account are not required.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 
@@ -12,7 +12,7 @@ To run from source: `npm install`, then `npm start`. To rebuild the portable exe
 
 - Select one of ten editable layouts: Introduction, Text Only, Checklist, Quote, Image Center, Image Left, Image Right, Image Compare, Thank You, and Navy Ribbon.
 - **Projects** opens with ten editable six-slide Fun Tech Facts carousels in the navy ribbon style. Click any project to edit it. The collection is seeded into local project storage once, so your edits remain yours on later launches.
-- **New** creates a new project in Projects. **Save project** (or Ctrl+S) saves the current project there. **Open** shows the saved projects list. The app also saves changes automatically, including when switching between projects.
+- **New** creates a new project in Projects. **Save project** (or Ctrl+S) saves the current project there. **Open** shows a searchable picker for saved projects. The app also saves changes automatically, including when switching between projects.
 - **Open a project file** imports a `.folio.json` file into Projects. **Save a copy to file** writes a portable `.folio.json` backup.
 - **Navy ribbon carousel** in Templates starts an eight-slide square project based on `Untitled.png`: navy background, cream typography, and continuous white rough borders. The first and last slides center their headlines; the middle slides use a heading and body.
 - Write your copy in Slide details. Add, duplicate, reorder, or delete slides using the strip below the canvas. Undo and redo restore edits and slide changes.
