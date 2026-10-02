@@ -4,7 +4,7 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.4.0.exe`. This is a portable app; installation and an account are not required.
+Open `dist/Folio-Carousel-Studio-1.5.0.exe`. This is a portable app; installation and an account are not required.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 
@@ -20,6 +20,7 @@ To run from source: `npm install`, then `npm start`. To rebuild the portable exe
 - Use Brand kit to change the name, Instagram handle, accent color, and font across every slide.
 - Choose light or dark and square (1080 × 1080) or portrait (1080 × 1350).
 - Add PNG, JPEG, or WebP photos to image layouts. Images are cropped to fill their frame and embedded in saved projects. Use photos under 15 MB; projects support up to 150 MB.
+- Add extra PNG, JPEG, or WebP images to any slide with **Add image**, by dropping a file on the canvas, or by pasting an image. Use **Add text** for movable captions. Drag an element to position it; drag its lower-right handle to resize it. Use the element list to select overlapping items or change their stacking order. Selected text can be edited, recolored, and resized in Slide details. These elements appear in saved projects, previews, and exports.
 - View the 36 original Figma layout references in the template library. Selecting one applies its format, theme, and layout. The templates are editable recreations inspired by the originals; the outlined text in exported Figma SVGs is not directly editable.
 - Preview the carousel and move through it with the arrow buttons or arrow keys.
 - Export one slide as PNG or the entire carousel as a ZIP containing numbered full-resolution PNGs. A one-slide carousel exports directly as PNG.
