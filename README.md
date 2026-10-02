@@ -2,7 +2,7 @@
 
 This is the **Linux desktop branch**. The Windows version is preserved on `main`.
 
-Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). On Linux, make the AppImage executable with `chmod +x`, then run it. If FUSE is unavailable, add `--appimage-extract-and-run`. For Debian/Ubuntu, install the `.deb` with `sudo apt install ./Folio-Carousel-Studio-1.4.0-amd64.deb`, then launch Folio from your application menu.
+Download the x86-64 AppImage or Debian package from [GitHub Releases](https://github.com/Echamma/folio-carousel-studio/releases). On Linux, make the AppImage executable with `chmod +x`, then run it. If FUSE is unavailable, add `--appimage-extract-and-run`. For Debian/Ubuntu, install the `.deb` with `sudo apt install ./Folio-Carousel-Studio-1.5.0-amd64.deb`, then launch Folio from your application menu.
 
 On Linux, `npm ci` installs development dependencies, `npm start` opens the editor, and `npm run build` creates AppImage and `.deb` packages. Use Node.js 22. `npm run build:windows` retains Windows packaging. Headless tests run with `xvfb-run -a npm test`. GitHub tests editor behavior, recovery on close, and the packaged executable on Ubuntu 22.04 before publishing Linux packages with SHA-256 checksums.
 
@@ -10,7 +10,7 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Use the Linux AppImage or `.deb` package from Releases. Windows users can run `Folio-Carousel-Studio-1.4.0.exe` from `dist` after building this branch. No account is required to run the app; this private repository requires GitHub access to download it.
+Use the Linux AppImage or `.deb` package from Releases. Windows users can run `Folio-Carousel-Studio-1.5.0.exe` from `dist` after building this branch. No account is required to run the app; this private repository requires GitHub access to download it.
 
 To run from source: `npm install`, then `npm start`. To rebuild the Windows portable executable: `npm run build:windows`. On Linux, use `npm run build`.
 
@@ -26,6 +26,7 @@ To run from source: `npm install`, then `npm start`. To rebuild the Windows port
 - Use Brand kit to change the name, Instagram handle, accent color, and font across every slide.
 - Choose light or dark and square (1080 × 1080) or portrait (1080 × 1350).
 - Add PNG, JPEG, or WebP photos to image layouts. Images are cropped to fill their frame and embedded in saved projects. Use photos under 15 MB; projects support up to 150 MB.
+- Add extra PNG, JPEG, or WebP images to any slide with **Add image**, by dropping a file on the canvas, or by pasting an image. Use **Add text** for movable captions. Drag an element to position it; drag its lower-right handle to resize it. Use the element list to select overlapping items or change their stacking order. Selected text can be edited, recolored, and resized in Slide details. These elements appear in saved projects, previews, and exports.
 - View the 36 original Figma layout references in the template library. Selecting one applies its format, theme, and layout. The templates are editable recreations inspired by the originals; the outlined text in exported Figma SVGs is not directly editable.
 - Preview the carousel and move through it with the arrow buttons or arrow keys.
 - Export one slide as PNG or the entire carousel as a ZIP containing numbered full-resolution PNGs. A one-slide carousel exports directly as PNG.

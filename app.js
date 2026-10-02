@@ -1,8 +1,12 @@
 'use strict';
 const $ = id => document.getElementById(id);
+const layerList = document.createElement('div'); layerList.id = 'layer-list'; layerList.className = 'layer-list'; $('layer-controls').before(layerList);
+const layerOrder = document.createElement('div'); layerOrder.className = 'layer-actions';
+for (const [id, label] of [['layer-back', 'Send backward'], ['layer-front', 'Bring forward']]) { const button = document.createElement('button'); button.id = id; button.type = 'button'; button.className = 'outline'; button.textContent = label; layerOrder.append(button); }
+$('remove-layer').before(layerOrder);
 const { layouts, referenceNames, render } = FolioRender;
 const clone = value => JSON.parse(JSON.stringify(value));
-const createSlide = (layout = 'text', overrides = {}) => ({ id: crypto.randomUUID(), layout, eyebrow: 'THE CREATIVE NOTES', title: 'One idea.\nA little possibility.', body: 'Share something useful. Make it simple, make it thoughtful, make it yours.', items: ['Start with a clear idea', 'Make every slide count', 'Finish with a next step'], image: '', image2: '', titleSize: 88, texture: true, swipe: true, ...overrides });
+const createSlide = (layout = 'text', overrides = {}) => ({ id: crypto.randomUUID(), layout, eyebrow: 'THE CREATIVE NOTES', title: 'One idea.\nA little possibility.', body: 'Share something useful. Make it simple, make it thoughtful, make it yours.', items: ['Start with a clear idea', 'Make every slide count', 'Finish with a next step'], image: '', image2: '', layers: [], titleSize: 88, texture: true, swipe: true, ...overrides });
 const defaults = () => ({ version: 1, name: 'The art of a good carousel', format: 'portrait', theme: 'light', accent: '#e65443', brand: 'YOUR STUDIO', handle: '@yourstudio', font: 'Arial', slides: [
   createSlide('introduction', { eyebrow: 'A NOTE FOR THE CREATORS', title: 'Good design.\nGreat stories.', body: 'Turn your next big idea into something\nworth swiping for.' }),
   createSlide('text', { title: 'Start with\nsomething real.', body: 'The best carousels begin with an idea your audience cares about.\n\nTeach something. Share a perspective. Tell a story only you can tell.' }),
@@ -20,7 +24,7 @@ const navyProject = () => ({ version: 1, name: 'QR Code — Navy Ribbon', format
   ['Sale:', 'Add your subscription offer, price, and terms here.'],
   ['Fill out the\nform in our\nBio', '']
 ].map(([title, body]) => createSlide('navy-ribbon', { eyebrow: '', title, body, titleSize: body ? 64 : 98, swipe: false })) });
-let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let projectPickerToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = []; let projectFolder = null; let saveQueue = Promise.resolve();
+let project = defaults(); let selected = 0; let selectedLayerId = null; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let projectPickerToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = []; let projectFolder = null; let saveQueue = Promise.resolve(); let renderedImages = {};
 const history = []; const future = []; const imageCache = new Map();
 function toast(message) { $('toast').textContent = message; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3500); }
 function current() { return project.slides[selected]; }
@@ -72,12 +76,14 @@ async function loadImage(src) {
   return imageCache.get(src);
 }
 async function allImages(snapshot = project) {
-  const sources = [...new Set(snapshot.slides.flatMap(s => [s.image, s.image2]).filter(Boolean))];
+  const sources = [...new Set(snapshot.slides.flatMap(s => [s.image, s.image2, ...(s.layers || []).filter(layer => layer.type === 'image').map(layer => layer.src)]).filter(Boolean))];
   const result = {}; await Promise.all(sources.map(async src => { result[src] = await loadImage(src); })); return result;
 }
 async function paint() {
   const token = ++renderToken; const images = await allImages(); if (token !== renderToken) return;
+  renderedImages = images;
   const result = render($('artboard'), current(), project, selected, images);
+  renderLayerHandles();
   $('overflow-warning').hidden = !result.reduced;
   document.querySelector('.canvas-wrap').style.aspectRatio = project.format === 'square' ? '1' : '4/5';
   $('height-caption').textContent = project.format === 'square' ? '1080 px' : '1350 px';
@@ -100,6 +106,93 @@ async function paint() {
   });
   $('undo').disabled = !history.length; $('redo').disabled = !future.length;
 }
+const clamp = (number, low, high) => Math.min(Math.max(number, low), high);
+function selectedLayer() { return (current().layers || []).find(layer => layer.id === selectedLayerId); }
+function syncLayerControls() {
+  const layer = selectedLayer();
+  layerList.replaceChildren();
+  (current().layers || []).forEach((item, index) => {
+    const button = document.createElement('button'); button.type = 'button';
+    button.className = 'layer-list-item' + (item.id === selectedLayerId ? ' active' : '');
+    button.textContent = item.type === 'image' ? `▣ Image ${index + 1}` : `T ${item.text.slice(0, 32) || 'Empty text'}`;
+    button.setAttribute('aria-pressed', String(item.id === selectedLayerId));
+    button.onclick = () => { selectedLayerId = item.id; syncLayerControls(); };
+    layerList.append(button);
+  });
+  $('layer-controls').hidden = !layer;
+  const position = (current().layers || []).findIndex(item => item.id === selectedLayerId);
+  $('layer-back').disabled = position <= 0;
+  $('layer-front').disabled = position < 0 || position === current().layers.length - 1;
+  if (layer) {
+    const isText = layer.type === 'text';
+    for (const id of ['layer-text-label', 'layer-size-label', 'layer-color-label']) $(id).hidden = !isText;
+    if (isText) {
+      if ($('layer-text').value !== layer.text) $('layer-text').value = layer.text;
+      $('layer-size').value = layer.fontSize;
+      $('layer-size-value').textContent = layer.fontSize + ' px';
+      $('layer-color').value = layer.color;
+    }
+  }
+  document.querySelectorAll('#overlay-editor .layer-hit').forEach(element => element.classList.toggle('selected', element.dataset.id === selectedLayerId));
+}
+function positionLayerHandle(element, layer) {
+  const height = project.format === 'square' ? 1080 : 1350;
+  element.style.left = `${layer.x / 1080 * 100}%`;
+  element.style.top = `${layer.y / height * 100}%`;
+  element.style.width = `${layer.width / 1080 * 100}%`;
+  element.style.height = `${layer.height / height * 100}%`;
+}
+function renderLayerHandles() {
+  const editor = $('overlay-editor'); editor.replaceChildren();
+  for (const layer of current().layers || []) {
+    const element = document.createElement('div'); element.className = 'layer-hit'; element.dataset.id = layer.id;
+    element.tabIndex = 0; element.setAttribute('role', 'button');
+    element.setAttribute('aria-label', layer.type === 'image' ? 'Move or resize image' : 'Move or resize text');
+    positionLayerHandle(element, layer);
+    const corner = document.createElement('span'); corner.className = 'layer-resize'; corner.title = 'Drag to resize';
+    element.append(corner);
+    element.onpointerdown = event => {
+      if (event.button !== 0) return;
+      event.preventDefault(); event.stopPropagation();
+      selectedLayerId = layer.id; syncLayerControls();
+      const resizing = event.target === corner;
+      const start = { ...layer, pointerX: event.clientX, pointerY: event.clientY };
+      let changed = false;
+      element.setPointerCapture(event.pointerId);
+      element.onpointermove = move => {
+        if (!element.hasPointerCapture(move.pointerId)) return;
+        const rect = $('artboard').getBoundingClientRect();
+        const dx = (move.clientX - start.pointerX) * 1080 / rect.width;
+        const dy = (move.clientY - start.pointerY) * (project.format === 'square' ? 1080 : 1350) / rect.height;
+        if (Math.abs(dx) + Math.abs(dy) < 1) return;
+        if (!changed) { record(); changed = true; }
+        if (resizing) {
+          if (layer.type === 'image') {
+            const factor = 1 + (Math.abs(dx / start.width) > Math.abs(dy / start.height) ? dx / start.width : dy / start.height);
+            const bounded = clamp(factor, Math.max(40 / start.width, 40 / start.height), Math.min((1080 - start.x) / start.width, ((project.format === 'square' ? 1080 : 1350) - start.y) / start.height));
+            layer.width = Math.round(start.width * bounded); layer.height = Math.round(start.height * bounded);
+          } else {
+            layer.width = Math.round(clamp(start.width + dx, 50, 1080 - start.x));
+            layer.height = Math.round(clamp(start.height + dy, 40, (project.format === 'square' ? 1080 : 1350) - start.y));
+          }
+        } else {
+          layer.x = Math.round(clamp(start.x + dx, 0, 1080 - layer.width));
+          layer.y = Math.round(clamp(start.y + dy, 0, (project.format === 'square' ? 1080 : 1350) - layer.height));
+        }
+        positionLayerHandle(element, layer);
+        render($('artboard'), current(), project, selected, renderedImages);
+      };
+      element.onpointerup = element.onpointercancel = end => {
+        if (element.hasPointerCapture(end.pointerId)) element.releasePointerCapture(end.pointerId);
+        element.onpointermove = element.onpointerup = element.onpointercancel = null;
+        if (changed) { finishChange(); syncControls(); }
+      };
+    };
+    element.ondblclick = () => { selectedLayerId = layer.id; syncLayerControls(); if (layer.type === 'text') $('layer-text').focus(); };
+    editor.append(element);
+  }
+  syncLayerControls();
+}
 function syncControls() {
   const s = current(); const layout = layouts.find(l => l.id === s.layout);
   $('project-name').value = project.name; $('format').value = project.format;
@@ -118,12 +211,13 @@ function syncControls() {
     const active = button.dataset.id === (projectFolder ? project.folderFileName : project.libraryId);
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
+  syncLayerControls();
 }
-function selectSlide(i) { clearTimeout(changeTimer); changeTimer = null; selected = i; syncControls(); paint(); }
+function selectSlide(i) { clearTimeout(changeTimer); changeTimer = null; selected = i; selectedLayerId = null; syncControls(); paint(); }
 function addSlide() { if (project.slides.length >= 20) return toast('A carousel can contain up to 20 slides.'); edit(() => { const slide = current().layout === 'navy-ribbon' ? createSlide('navy-ribbon', { eyebrow: '', title: 'Your next idea', body: 'Add a new chapter to your story.', titleSize: 64, swipe: false }) : createSlide(); project.slides.splice(selected + 1, 0, slide); selected++; }); }
 function undo(redo = false) {
   const source = redo ? future : history; const target = redo ? history : future;
-  if (!source.length) return; clearTimeout(changeTimer); changeTimer = null; target.push(JSON.stringify({ project, selected })); const state = JSON.parse(source.pop()); project = state.project; selected = state.selected; syncControls(); finishChange();
+  if (!source.length) return; clearTimeout(changeTimer); changeTimer = null; target.push(JSON.stringify({ project, selected })); const state = JSON.parse(source.pop()); project = state.project; selected = state.selected; selectedLayerId = null; syncControls(); finishChange();
 }
 function validate(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.slides) || value.slides.length < 1 || value.slides.length > 20 || !['portrait', 'square'].includes(value.format) || !['light', 'dark'].includes(value.theme)) throw new Error('This is not a supported Folio project.');
@@ -134,12 +228,22 @@ function validate(value) {
     for (const key of ['eyebrow', 'title', 'body']) if (typeof s[key] !== 'string' || s[key].length > 1500) throw new Error('Invalid slide text.');
     if (!Array.isArray(s.items) || s.items.length > 5 || s.items.some(t => typeof t !== 'string' || t.length > 1000)) throw new Error('Invalid checklist.');
     for (const key of ['image', 'image2']) if (typeof s[key] !== 'string' || (s[key] && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(s[key]))) throw new Error('Invalid slide image.');
+    if (s.layers === undefined) s.layers = [];
+    if (!Array.isArray(s.layers) || s.layers.length > 30) throw new Error('Invalid slide elements.');
+    s.layers.forEach(layer => {
+      if (!layer || !['image', 'text'].includes(layer.type)) throw new Error('Invalid slide element.');
+      for (const key of ['x', 'y', 'width', 'height']) if (!Number.isFinite(layer[key])) throw new Error('Invalid element position.');
+      if (layer.x < 0 || layer.y < 0 || layer.width < 20 || layer.height < 20 || layer.x + layer.width > 1080.01 || layer.y + layer.height > (value.format === 'square' ? 1080.01 : 1350.01)) throw new Error('Element is outside the slide.');
+      if (layer.type === 'image' && (typeof layer.src !== 'string' || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(layer.src))) throw new Error('Invalid element image.');
+      if (layer.type === 'text' && (typeof layer.text !== 'string' || layer.text.length > 500 || !/^#[\da-f]{6}$/i.test(layer.color) || !Number.isFinite(layer.fontSize) || layer.fontSize < 24 || layer.fontSize > 180)) throw new Error('Invalid element text.');
+      layer.id = crypto.randomUUID();
+    });
     if (typeof s.texture !== 'boolean' || typeof s.swipe !== 'boolean') throw new Error('Invalid slide options.');
     s.id = crypto.randomUUID();
   });
   return value;
 }
-async function adopt(value) { const next = validate(value); record(); project = next; selected = 0; imageCache.clear(); syncControls(); finishChange(); toast('Project opened. Pick up where you left off.'); }
+async function adopt(value) { const next = validate(value); record(); project = next; selected = 0; selectedLayerId = null; imageCache.clear(); syncControls(); finishChange(); toast('Project opened. Pick up where you left off.'); }
 async function savedLibraryProject(id) {
   if (!db) return null;
   return new Promise((resolve, reject) => {
@@ -356,6 +460,41 @@ async function uploadImage(input, key) {
     edit(() => { target[key] = data; }); toast('Image added.');
   } catch (error) { toast(error.message); } finally { input.value = ''; }
 }
+async function addLayerImage(file, x, y) {
+  if (!file) return;
+  const targetId = current().id;
+  try {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 15 * 1024 * 1024) throw new Error('Choose a PNG, JPEG, or WebP under 15 MB.');
+    const src = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('Could not read image.')); reader.readAsDataURL(file); });
+    const image = await loadImage(src);
+    if (!image) throw new Error('This image cannot be read.');
+    if (JSON.stringify(project).length + src.length > 150 * 1024 * 1024) throw new Error('Project reached the 150 MB limit. Use a smaller image.');
+    const target = project.slides.find(slide => slide.id === targetId); if (!target) return;
+    if ((target.layers || []).length >= 30) throw new Error('A slide can have up to 30 extra elements.');
+    const scale = 440 / Math.max(image.width, image.height);
+    const width = Math.max(40, Math.round(image.width * scale));
+    const height = Math.max(40, Math.round(image.height * scale));
+    const layer = { id: crypto.randomUUID(), type: 'image', src, x: Math.round(clamp(x ?? (1080 - width) / 2, 0, 1080 - width)), y: Math.round(clamp(y ?? ((project.format === 'square' ? 1080 : 1350) - height) / 2, 0, (project.format === 'square' ? 1080 : 1350) - height)), width, height };
+    edit(() => { target.layers ||= []; target.layers.push(layer); selectedLayerId = layer.id; });
+    toast('Image added. Drag it to move or use the corner to resize.');
+  } catch (error) { toast(error.message); }
+}
+function addLayerText() {
+  if ((current().layers || []).length >= 30) return toast('A slide can have up to 30 extra elements.');
+  const layer = { id: crypto.randomUUID(), type: 'text', text: 'Your text here', color: project.theme === 'dark' ? '#f9dec9' : '#20211f', fontSize: 64, x: 140, y: project.format === 'square' ? 410 : 520, width: 650, height: 180 };
+  edit(() => { current().layers ||= []; current().layers.push(layer); selectedLayerId = layer.id; });
+  $('layer-text').focus(); $('layer-text').select();
+}
+function removeSelectedLayer() {
+  if (!selectedLayer()) return;
+  edit(() => { current().layers = current().layers.filter(layer => layer.id !== selectedLayerId); selectedLayerId = null; });
+}
+function moveSelectedLayer(direction) {
+  const position = (current().layers || []).findIndex(layer => layer.id === selectedLayerId);
+  const next = position + direction;
+  if (position < 0 || next < 0 || next >= current().layers.length) return;
+  edit(() => { const [layer] = current().layers.splice(position, 1); current().layers.splice(next, 0, layer); });
+}
 function references() {
   $('reference-grid').replaceChildren();
   layouts.forEach((layout, i) => {
@@ -376,7 +515,7 @@ async function showPreview() { render($('preview-canvas'), project.slides[previe
 $('items').addEventListener('input', () => { markTextEdit(); current().items = $('items').value.split('\n').filter(s => s.trim()).slice(0, 5); finishChange(); });
 $('project-name').addEventListener('input', () => { markTextEdit(); project.name = $('project-name').value; scheduleSave(); });
 [['brand-name', 'brand'], ['brand-handle', 'handle'], ['brand-accent', 'accent'], ['brand-font', 'font']].forEach(([id, key]) => $(id).addEventListener('input', () => { markTextEdit(); project[key] = $(id).value; $('accent-value').textContent = project.accent.toUpperCase(); finishChange(); }));
-$('format').onchange = () => edit(() => { project.format = $('format').value; });
+$('format').onchange = () => edit(() => { project.format = $('format').value; const height = project.format === 'square' ? 1080 : 1350; project.slides.forEach(slide => (slide.layers || []).forEach(layer => { if (layer.height > height) { const scale = height / layer.height; layer.height = height; if (layer.type === 'image') layer.width = Math.round(layer.width * scale); } layer.x = Math.min(layer.x, 1080 - layer.width); layer.y = Math.min(layer.y, height - layer.height); })); });
 ['light', 'dark'].forEach(theme => $(theme + '-theme').onclick = () => edit(() => { project.theme = theme; }));
 $('title-size').oninput = () => { markTextEdit(); current().titleSize = Number($('title-size').value); $('size-value').textContent = current().titleSize + ' px'; finishChange(); };
 ['texture', 'swipe'].forEach(id => $(id).onchange = () => edit(() => { current()[id] = $(id).checked; }));
@@ -387,6 +526,29 @@ $('delete-slide').onclick = () => { if (project.slides.length === 1) return; edi
 $('undo').onclick = () => undo(); $('redo').onclick = () => undo(true);
 $('image-file').onchange = () => uploadImage($('image-file'), 'image'); $('image2-file').onchange = () => uploadImage($('image2-file'), 'image2');
 $('remove-image').onclick = () => edit(() => { current().image = ''; current().image2 = ''; });
+$('add-layer-image').onclick = () => $('layer-image-file').click();
+$('layer-image-file').onchange = () => { addLayerImage($('layer-image-file').files[0]); $('layer-image-file').value = ''; };
+$('add-layer-text').onclick = addLayerText;
+$('remove-layer').onclick = removeSelectedLayer;
+$('layer-back').onclick = () => moveSelectedLayer(-1);
+$('layer-front').onclick = () => moveSelectedLayer(1);
+$('layer-text').oninput = () => { const layer = selectedLayer(); if (!layer || layer.type !== 'text') return; markTextEdit(); layer.text = $('layer-text').value; finishChange(); };
+$('layer-size').oninput = () => { const layer = selectedLayer(); if (!layer || layer.type !== 'text') return; markTextEdit(); layer.fontSize = Number($('layer-size').value); $('layer-size-value').textContent = layer.fontSize + ' px'; finishChange(); };
+$('layer-color').oninput = () => { const layer = selectedLayer(); if (!layer || layer.type !== 'text') return; markTextEdit(); layer.color = $('layer-color').value; finishChange(); };
+$('artboard').onclick = () => { selectedLayerId = null; syncLayerControls(); };
+document.querySelector('.canvas-wrap').addEventListener('dragover', event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } });
+document.querySelector('.canvas-wrap').addEventListener('drop', event => {
+  event.preventDefault();
+  const file = [...event.dataTransfer.files].find(item => item.type.startsWith('image/'));
+  if (!file) return;
+  const rect = $('artboard').getBoundingClientRect();
+  addLayerImage(file, (event.clientX - rect.left) * 1080 / rect.width, (event.clientY - rect.top) * (project.format === 'square' ? 1080 : 1350) / rect.height);
+});
+document.addEventListener('paste', event => {
+  if (/INPUT|TEXTAREA/.test(event.target.tagName)) return;
+  const file = [...(event.clipboardData?.files || [])].find(item => item.type.startsWith('image/'));
+  if (file) { event.preventDefault(); addLayerImage(file); }
+});
 $('save-project').onclick = saveProject;
 $('save-project-file').onclick = saveProjectFile;
 $('new-project').onclick = () => createProject({ ...defaults(), name: 'Untitled carousel' });
@@ -413,6 +575,13 @@ document.addEventListener('keydown', event => {
   if ($('preview-dialog').open) { if (event.key === 'ArrowLeft') $('preview-prev').click(); if (event.key === 'ArrowRight') $('preview-next').click(); return; }
   if ($('project-dialog').open) return;
   if ($('reference-dialog').open) return;
+  if (selectedLayer() && (event.key === 'Delete' || event.key === 'Backspace')) { event.preventDefault(); removeSelectedLayer(); return; }
+  if (selectedLayer() && event.key === 'Escape') { selectedLayerId = null; syncLayerControls(); return; }
+  if (selectedLayer() && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+    event.preventDefault(); const layer = selectedLayer();
+    edit(() => { const step = event.shiftKey ? 20 : 5; layer.x = clamp(layer.x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), 0, 1080 - layer.width); layer.y = clamp(layer.y + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0), 0, (project.format === 'square' ? 1080 : 1350) - layer.height); });
+    return;
+  }
   if (event.key === 'ArrowLeft' && selected > 0) selectSlide(selected - 1);
   if (event.key === 'ArrowRight' && selected < project.slides.length - 1) selectSlide(selected + 1);
 });

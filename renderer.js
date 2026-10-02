@@ -64,7 +64,7 @@
     }
     ctx.restore();
   }
-  function render(canvas, slide, project, index, images = {}) {
+  function renderBase(canvas, slide, project, index, images = {}) {
     const h = project.format === 'square' ? 1080 : 1350;
     canvas.width = 1080; canvas.height = h;
     const ctx = canvas.getContext('2d');
@@ -196,6 +196,22 @@
       text(ctx, (index + 1) + ' / ' + project.slides.length + '  →', 880, height - 95, 150, 20, cream, project.font, 600, 32);
     }
     return { reduced };
+  }
+  function render(canvas, slide, project, index, images = {}) {
+    const result = renderBase(canvas, slide, project, index, images);
+    const ctx = canvas.getContext('2d');
+    for (const layer of slide.layers || []) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(layer.x, layer.y, layer.width, layer.height); ctx.clip();
+      if (layer.type === 'image') {
+        const image = images[layer.src];
+        if (image) ctx.drawImage(image, layer.x, layer.y, layer.width, layer.height);
+      } else if (layer.type === 'text') {
+        text(ctx, layer.text, layer.x, layer.y, layer.width, layer.fontSize, layer.color, project.font, 700, layer.height);
+      }
+      ctx.restore();
+    }
+    return result;
   }
   const api = { layouts, referenceNames, wrap, render, ribbonNoise };
   if (typeof module !== 'undefined') module.exports = api;
