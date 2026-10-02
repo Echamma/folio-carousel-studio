@@ -4,14 +4,14 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.3.0.exe`. This is a portable app; installation and an account are not required.
+Open `dist/Folio-Carousel-Studio-1.4.0.exe`. This is a portable app; installation and an account are not required.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 
 ## Create
 
 - Select one of ten editable layouts: Introduction, Text Only, Checklist, Quote, Image Center, Image Left, Image Right, Image Compare, Thank You, and Navy Ribbon.
-- **Open** asks you to choose a project folder the first time. Folio remembers it and shows a searchable list of `.folio.json` files in that folder on later opens. Use **Change folder** in Projects or in the picker to select another folder.
+- **Open** asks you to choose a project folder the first time. Folio remembers it and shows a searchable visual gallery of `.folio.json` files, with a cover preview for each project. Use **Change folder** in Projects or in the gallery to select another folder.
 - The ten editable six-slide Fun Tech Facts carousels are added to the chosen folder on first selection, along with any projects previously saved in the app. Existing files with newer saved content are kept.
 - **New** creates a new project file in the chosen folder. **Save project** (or Ctrl+S) and autosave update that file. The app also keeps a local recovery copy.
 - **Open a project file** imports a `.folio.json` file into Projects. **Save a copy to file** writes a portable `.folio.json` backup.

@@ -20,7 +20,7 @@ const navyProject = () => ({ version: 1, name: 'QR Code — Navy Ribbon', format
   ['Sale:', 'Add your subscription offer, price, and terms here.'],
   ['Fill out the\nform in our\nBio', '']
 ].map(([title, body]) => createSlide('navy-ribbon', { eyebrow: '', title, body, titleSize: body ? 64 : 98, swipe: false })) });
-let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = []; let projectFolder = null; let saveQueue = Promise.resolve();
+let project = defaults(); let selected = 0; let previewIndex = 0; let db; let toastTimer; let saveTimer; let changeTimer; let renderToken = 0; let projectPickerToken = 0; let savedSnapshot; let busy = false; let featuredProjects = []; let savedProjectsCache = []; let projectFolder = null; let saveQueue = Promise.resolve();
 const history = []; const future = []; const imageCache = new Map();
 function toast(message) { $('toast').textContent = message; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3500); }
 function current() { return project.slides[selected]; }
@@ -240,16 +240,36 @@ async function renderSavedProjects() {
   if ($('project-dialog').open) renderProjectPicker();
 }
 function renderProjectPicker() {
+  const token = ++projectPickerToken;
   const query = $('project-search').value.trim().toLocaleLowerCase();
   const list = $('project-picker-list'); list.replaceChildren();
-  savedProjectsCache.filter(entry => (entry.name || '').toLocaleLowerCase().includes(query)).forEach(entry => {
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = projectFolder ? entry.fileName : entry.libraryId;
+  const matches = savedProjectsCache.filter(entry => (entry.name || '').toLocaleLowerCase().includes(query));
+  $('project-picker-count').textContent = `${matches.length} project${matches.length === 1 ? '' : 's'}`;
+  matches.forEach(entry => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'project-tile'; button.dataset.id = projectFolder ? entry.fileName : entry.libraryId;
     button.setAttribute('aria-label', `Open ${entry.name}`);
-    const label = document.createElement('span'); label.className = 'collection-label'; label.textContent = entry.name || 'Untitled carousel';
+    const cover = document.createElement('span'); cover.className = 'project-tile-cover';
+    const canvas = document.createElement('canvas'); canvas.setAttribute('aria-hidden', 'true');
+    cover.append(canvas);
+    const info = document.createElement('span'); info.className = 'project-tile-info';
+    const label = document.createElement('strong'); label.textContent = entry.name || 'Untitled carousel';
     const count = document.createElement('small'); count.textContent = `${Array.isArray(entry.slides) ? entry.slides.length : entry.slides} slides`;
-    button.append(label, count);
+    info.append(label, count);
+    const action = document.createElement('span'); action.className = 'project-tile-action'; action.setAttribute('aria-hidden', 'true'); action.textContent = 'Open ↗';
+    button.append(cover, info, action);
     button.onclick = async () => { if (await openSavedProject(button.dataset.id)) $('project-dialog').close(); };
     list.append(button);
+    const value = projectFolder && window.desktop?.openFolderProject ? desktop.openFolderProject(entry.fileName) : Promise.resolve(entry);
+    Promise.resolve(value).then(async snapshot => {
+      if (token !== projectPickerToken || !button.isConnected || !snapshot?.slides?.length) return;
+      const images = await allImages(snapshot);
+      if (token !== projectPickerToken || !button.isConnected) return;
+      render(canvas, snapshot.slides[0], snapshot, 0, images);
+      cover.classList.add('ready');
+      cover.style.aspectRatio = snapshot.format === 'square' ? '1' : '4 / 5';
+    }).catch(() => {
+      if (button.isConnected) cover.classList.add('unavailable');
+    });
   });
   if (!list.childElementCount) {
     const empty = document.createElement('p'); empty.className = 'collection-intro'; empty.textContent = 'No saved projects match your search.'; list.append(empty);

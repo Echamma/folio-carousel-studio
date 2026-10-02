@@ -32,8 +32,12 @@ app.whenReady().then(async () => {
       if (project.name !== 'Why Bluetooth Has a Viking Name') throw new Error('First carousel did not open in the editor');
       document.getElementById('open-project').click();
       await waitFor(() => projectFolder && document.getElementById('project-dialog').open && document.querySelectorAll('#project-picker-list button[data-id]').length === 10);
+      await waitFor(() => document.querySelectorAll('#project-picker-list .project-tile-cover.ready').length === 10);
+      const firstCover = document.querySelector('#project-picker-list canvas');
+      if (firstCover.width !== 1080 || firstCover.height !== 1080) throw new Error('Project cover preview did not render');
       const search = document.getElementById('project-search'); search.value = 'GPS'; search.dispatchEvent(new Event('input'));
       if (document.querySelectorAll('#project-picker-list button[data-id]').length !== 1) throw new Error('Project search did not filter the picker');
+      if (document.getElementById('project-picker-count').textContent !== '1 project') throw new Error('Project gallery count did not update');
       const gpsFile = document.querySelector('#project-picker-list button[data-id]').dataset.id;
       document.querySelector('#project-picker-list button[data-id]').click();
       await waitFor(() => project.name === 'How GPS Finds You' && !document.getElementById('project-dialog').open);
@@ -64,9 +68,21 @@ app.whenReady().then(async () => {
     assert.equal(afterReload.name, 'My new carousel');
     assert.equal(afterReload.count, 11);
     await win.webContents.executeJavaScript(`document.getElementById('open-project').click()`);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    const gallery = await win.webContents.executeJavaScript(`(async () => {
+      for (let i = 0; i < 120; i++) {
+        if (document.querySelectorAll('#project-picker-list .project-tile-cover.ready').length === 11) {
+          const canvas = document.querySelector('#project-picker-list canvas');
+          return { pixel: [...canvas.getContext('2d').getImageData(100, 100, 1, 1).data], opacity: getComputedStyle(canvas).opacity, rect: canvas.getBoundingClientRect().toJSON() };
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      throw new Error('Saved project covers did not load after reopening');
+    })()`);
+    assert.deepEqual(gallery.pixel, [60, 65, 93, 255], 'Project cover shows its rendered slide');
+    assert.equal(gallery.opacity, '1', 'Project cover is visible');
     assert.equal(folderPrompts, 1, 'Open remembers the folder after reload');
     await fs.mkdir(path.join(__dirname, '..', 'test-output'), { recursive: true });
+    await win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await fs.writeFile(path.join(__dirname, '..', 'test-output', 'projects-ui.png'), (await win.webContents.capturePage()).toPNG());
     console.log('PASS: Ten carousels load in Folio; New, Save, Open, and reload preserve projects');
     clearTimeout(timeout); app.exit(0);
