@@ -71,6 +71,11 @@ app.whenReady().then(async () => {
       addSlide(); assert(project.slides.length === 9 && current().layout === 'navy-ribbon', 'Additional navy slides keep the selected style'); undo(); assert(project.slides.length === 8 && selected === 0, 'Undo adding a navy slide');
       const navyCanvas = document.createElement('canvas'); render(navyCanvas, current(), project, 0);
       const navyCtx = navyCanvas.getContext('2d'); assert(Array.from(navyCtx.getImageData(0,0,1,1).data).join(',') === '60,65,93,255', 'Navy background matches the reference');
+      const arabicSlide = createSlide('navy-ribbon', { title: 'مرحباً بكم', body: 'نص عربي', texture: false, swipe: false });
+      const arabicCanvas = document.createElement('canvas'); render(arabicCanvas, arabicSlide, { ...project, direction: 'rtl', slides: [arabicSlide] }, 0);
+      const arabicCtx = arabicCanvas.getContext('2d');
+      const titleInk = (from, to) => { let count = 0; for (let x = from; x < to; x += 4) for (let y = 350; y < 480; y += 4) if (arabicCtx.getImageData(x,y,1,1).data[0] > 150) count++; return count; };
+      assert(titleInk(700, 990) > titleInk(90, 380) + 10, 'Arabic slide text aligns to the right');
       const firstRender = navyCanvas.toDataURL(); render(navyCanvas,current(),project,0); assert(navyCanvas.toDataURL() === firstRender, 'Rough border renders consistently between preview and export');
       $('title').value = 'Your next idea'; $('title').dispatchEvent(new Event('input')); assert(current().title === 'Your next idea', 'Navy headline remains editable'); undo(); assert(current().title === 'What Is A\\nQR Code?', 'Navy headline undo');
       const savedNavy = clone(project); validate(savedNavy); assert(savedNavy.slides.length === 8, 'Navy project validates for reopening');

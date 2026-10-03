@@ -4,6 +4,7 @@ const layerList = document.createElement('div'); layerList.id = 'layer-list'; la
 const layerOrder = document.createElement('div'); layerOrder.className = 'layer-actions';
 for (const [id, label] of [['layer-back', 'Send backward'], ['layer-front', 'Bring forward']]) { const button = document.createElement('button'); button.id = id; button.type = 'button'; button.className = 'outline'; button.textContent = label; layerOrder.append(button); }
 $('remove-layer').before(layerOrder);
+['project-name', 'eyebrow', 'title', 'body', 'layer-text'].forEach(id => $(id).dir = 'auto');
 const { layouts, referenceNames, render } = FolioRender;
 const clone = value => JSON.parse(JSON.stringify(value));
 const createSlide = (layout = 'text', overrides = {}) => ({ id: crypto.randomUUID(), layout, eyebrow: 'THE CREATIVE NOTES', title: 'One idea.\nA little possibility.', body: 'Share something useful. Make it simple, make it thoughtful, make it yours.', items: ['Start with a clear idea', 'Make every slide count', 'Finish with a next step'], image: '', image2: '', layers: [], titleSize: 88, texture: true, swipe: true, ...overrides });
@@ -221,6 +222,7 @@ function undo(redo = false) {
 }
 function validate(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.slides) || value.slides.length < 1 || value.slides.length > 20 || !['portrait', 'square'].includes(value.format) || !['light', 'dark'].includes(value.theme)) throw new Error('This is not a supported Folio project.');
+  if (value.direction !== undefined && !['ltr', 'rtl'].includes(value.direction)) throw new Error('Invalid project text direction.');
   if (!/^#[\da-f]{6}$/i.test(value.accent) || !['Arial', 'Georgia', 'Verdana', 'Trebuchet MS'].includes(value.font)) throw new Error('Project brand settings are invalid.');
   for (const key of ['name', 'brand', 'handle']) if (typeof value[key] !== 'string' || value[key].length > 100) throw new Error('Invalid project text.');
   value.slides.forEach(s => {
@@ -335,7 +337,7 @@ async function renderSavedProjects() {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'collection-project'; button.dataset.id = projectFolder ? entry.fileName : entry.libraryId;
     button.setAttribute('aria-label', `Open ${entry.name}`);
     const number = document.createElement('span'); number.className = 'collection-number'; number.textContent = String(index + 1).padStart(2, '0');
-    const label = document.createElement('span'); label.className = 'collection-label'; label.textContent = entry.name || 'Untitled carousel';
+    const label = document.createElement('span'); label.className = 'collection-label'; label.dir = 'auto'; label.textContent = entry.name || 'Untitled carousel';
     const count = document.createElement('small'); count.textContent = `${Array.isArray(entry.slides) ? entry.slides.length : entry.slides} slides`;
     button.append(number, label, count); button.onclick = () => openSavedProject(button.dataset.id); list.append(button);
   });
@@ -356,7 +358,7 @@ function renderProjectPicker() {
     const canvas = document.createElement('canvas'); canvas.setAttribute('aria-hidden', 'true');
     cover.append(canvas);
     const info = document.createElement('span'); info.className = 'project-tile-info';
-    const label = document.createElement('strong'); label.textContent = entry.name || 'Untitled carousel';
+    const label = document.createElement('strong'); label.dir = 'auto'; label.textContent = entry.name || 'Untitled carousel';
     const count = document.createElement('small'); count.textContent = `${Array.isArray(entry.slides) ? entry.slides.length : entry.slides} slides`;
     info.append(label, count);
     const action = document.createElement('span'); action.className = 'project-tile-action'; action.setAttribute('aria-hidden', 'true'); action.textContent = 'Open ↗';

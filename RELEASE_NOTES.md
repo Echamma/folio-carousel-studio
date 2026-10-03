@@ -1,7 +1,7 @@
-# Folio Carousel Studio 1.5.0
+# Folio Carousel Studio 1.5.1
 
 Instagram carousel desktop editor with ten layouts, light and dark themes, square and portrait output, editable brand settings, image uploads, slide ordering, preview, PNG/ZIP exports, and editable project files.
 
-Includes ten editable, six-slide Fun Tech Facts carousels, the Navy Ribbon eight-slide QR-code preset, and bundled Figma references supplied with this project. Add extra PNG, JPEG, or WebP images and text to any slide without changing its layout. Images can be picked, dropped, or pasted; drag elements to move them and use the corner handle to resize. Text content, size, and color remain editable. Extra elements persist in project files and appear in previews and exports. Open shows a searchable visual gallery of projects in the remembered folder. Closing still saves a recovery copy.
+Folio now displays Arabic and other right-to-left slide copy aligned to the right, including in the Navy Ribbon layout, while keeping phone numbers in the correct reading order. Arabic text fields also use the natural writing direction. Existing layouts, movable images and text, the visual project gallery, and automatic recovery remain available.
 
 The `main` branch contains the Windows version. The `linux` branch provides Linux desktop packaging and its release workflow. This private repository includes original reference assets; no third-party ownership or license is claimed.

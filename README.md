@@ -4,7 +4,7 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.5.0.exe`. This is a portable app; installation and an account are not required.
+Open `dist/Folio-Carousel-Studio-1.5.1.exe`. This is a portable app; installation and an account are not required.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 
@@ -17,6 +17,7 @@ To run from source: `npm install`, then `npm start`. To rebuild the portable exe
 - **Open a project file** imports a `.folio.json` file into Projects. **Save a copy to file** writes a portable `.folio.json` backup.
 - **Navy ribbon carousel** in Templates starts an eight-slide square project based on `Untitled.png`: navy background, cream typography, and continuous white rough borders. The first and last slides center their headlines; the middle slides use a heading and body.
 - Write your copy in Slide details. Add, duplicate, reorder, or delete slides using the strip below the canvas. Undo and redo restore edits and slide changes.
+- Arabic and other right-to-left text is aligned correctly in slides and editing fields. Projects can set `direction` to `rtl` so numbers and contact details stay aligned with the Arabic layout.
 - Use Brand kit to change the name, Instagram handle, accent color, and font across every slide.
 - Choose light or dark and square (1080 × 1080) or portrait (1080 × 1350).
 - Add PNG, JPEG, or WebP photos to image layouts. Images are cropped to fill their frame and embedded in saved projects. Use photos under 15 MB; projects support up to 150 MB.
