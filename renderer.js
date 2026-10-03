@@ -33,6 +33,12 @@
     return lines;
   }
   function text(ctx, value, x, y, width, size, color, font, weight = 400, maxHeight = Infinity) {
+    const previousAlign = ctx.textAlign;
+    const previousDirection = ctx.direction;
+    const containsRtl = /[\u0590-\u08ff]/.test(value);
+    const rightAligned = previousDirection === 'rtl' || containsRtl;
+    ctx.direction = containsRtl ? 'rtl' : 'ltr';
+    ctx.textAlign = rightAligned ? 'right' : 'left';
     let actual = size;
     let lines;
     do {
@@ -44,7 +50,9 @@
     ctx.fillStyle = color;
     ctx.textBaseline = 'top';
     const visible = lines.slice(0, Math.max(1, Math.floor(maxHeight / (actual * 1.18))));
-    visible.forEach((line, i) => ctx.fillText(line, x, y + i * actual * 1.18));
+    visible.forEach((line, i) => ctx.fillText(line, x + (rightAligned ? width : 0), y + i * actual * 1.18));
+    ctx.textAlign = previousAlign;
+    ctx.direction = previousDirection;
     return { height: visible.length * actual * 1.18, reduced: actual < size || visible.length < lines.length };
   }
   function rounded(ctx, x, y, w, h, radius, color) {
@@ -68,6 +76,7 @@
     const h = project.format === 'square' ? 1080 : 1350;
     canvas.width = 1080; canvas.height = h;
     const ctx = canvas.getContext('2d');
+    ctx.direction = project.direction === 'rtl' ? 'rtl' : 'ltr';
     if (slide.layout === 'navy-ribbon') return renderNavy(ctx, slide, project, index, h);
     const p = palettes[project.theme]; const accent = project.accent; const font = project.font;
     const margin = 88; const width = 904; const bottom = h - 190;
@@ -183,7 +192,9 @@
       reduced = actual < titleSize;
       ctx.fillStyle = cream; ctx.textBaseline = 'top';
       const y = (top + bottom - lines.length * actual * 1.18) / 2;
-      lines.forEach((line, i) => ctx.fillText(line, (1080 - ctx.measureText(line).width) / 2, y + i * actual * 1.18));
+      ctx.textAlign = 'center';
+      lines.forEach((line, i) => ctx.fillText(line, 540, y + i * actual * 1.18));
+      ctx.textAlign = 'start';
     } else {
       const x = 88; const width = 900; let y = top + 164;
       if (slide.eyebrow) { const eyebrow = text(ctx, slide.eyebrow, x, y - 64, width, 22, cream, project.font, 700, 55); reduced ||= eyebrow.reduced; }
