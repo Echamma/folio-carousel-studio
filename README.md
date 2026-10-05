@@ -4,7 +4,7 @@ A Windows desktop app for making Instagram carousels, inspired by the collection
 
 ## Run
 
-Open `dist/Folio-Carousel-Studio-1.5.1.exe`. This is a portable app; installation and an account are not required.
+Open `dist/Folio-Carousel-Studio-1.5.2.exe`. This is a portable app; installation and an account are not required. The project folder you choose is remembered across launches, including when a synced folder is temporarily unavailable.
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 

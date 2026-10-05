@@ -1,10 +1,16 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const JSZip = require('jszip');
 const funTechProjects = require('./assets/projects/fun-tech/manifest.json');
 const funTechIds = new Set(funTechProjects.map(project => project.slug));
+if (process.env.FOLIO_TEST !== '1') {
+  const dataPath = path.join(app.getPath('appData'), 'folio-carousel-studio');
+  fsSync.mkdirSync(dataPath, { recursive: true });
+  app.setPath('userData', dataPath);
+}
 let window;
 let closing = false;
 let allowClose = false;
@@ -18,7 +24,6 @@ async function projectFolder() {
   try {
     const config = JSON.parse(await fs.readFile(folderConfigPath(), 'utf8'));
     if (typeof config.path !== 'string' || !path.isAbsolute(config.path)) return null;
-    if (!(await fs.stat(config.path)).isDirectory()) return null;
     return config.path;
   } catch (_) { return null; }
 }
@@ -96,7 +101,8 @@ ipcMain.handle('get-project-folder', projectFolder);
 ipcMain.handle('choose-project-folder', async () => {
   const current = await projectFolder();
   const suggested = path.join(app.getPath('documents'), 'Folio Projects');
-  const defaultPath = current || await fs.stat(suggested).then(stat => stat.isDirectory() ? suggested : app.getPath('documents')).catch(() => app.getPath('documents'));
+  const availableCurrent = current && await fs.stat(current).then(stat => stat.isDirectory(), () => false);
+  const defaultPath = availableCurrent ? current : await fs.stat(suggested).then(stat => stat.isDirectory() ? suggested : app.getPath('documents')).catch(() => app.getPath('documents'));
   const result = await dialog.showOpenDialog(window, { title: 'Choose your Folio projects folder', defaultPath, properties: ['openDirectory', 'createDirectory'] });
   if (result.canceled || !result.filePaths?.[0]) return null;
   const selected = path.resolve(result.filePaths[0]);

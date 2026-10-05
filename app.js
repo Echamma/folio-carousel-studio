@@ -49,15 +49,15 @@ async function persistSnapshot(snapshot) {
 }
 async function saveNow() {
   clearTimeout(saveTimer);
-  if (!db) { $('save-status').textContent = 'Use Save project to keep your work'; return; }
+  if (!db && !projectFolder) { $('save-status').textContent = 'Use Save project to keep your work'; return; }
   project.savedAt = Date.now(); const snapshot = clone(project); const folder = projectFolder;
   saveQueue = saveQueue.catch(() => {}).then(async () => {
-    await persistSnapshot(snapshot);
+    if (db) await persistSnapshot(snapshot);
     if (folder && window.desktop?.saveFolderProject) {
       const saved = await desktop.saveFolderProject(snapshot);
       snapshot.folderFileName = saved.fileName;
       if (project.libraryId === snapshot.libraryId && projectFolder === folder) project.folderFileName = saved.fileName;
-      await persistSnapshot(snapshot);
+      if (db) await persistSnapshot(snapshot);
     }
     if (project.libraryId === snapshot.libraryId) {
       savedSnapshot = JSON.stringify(snapshot);
@@ -323,10 +323,20 @@ async function ensureProjectFolder() {
   return chooseProjectFolder();
 }
 async function renderSavedProjects() {
-  if (!db) return;
+  if (!db && !projectFolder) return;
   updateFolderLabel();
   const featuredOrder = new Map(featuredProjects.map((entry, index) => [entry.slug, index]));
-  const projects = (projectFolder && window.desktop?.listFolderProjects ? await desktop.listFolderProjects() : await legacyProjects()).sort((a, b) => {
+  let entries;
+  try { entries = projectFolder && window.desktop?.listFolderProjects ? await desktop.listFolderProjects() : await legacyProjects(); }
+  catch (_) {
+    savedProjectsCache = [];
+    const list = $('projects-list'); list.replaceChildren();
+    const message = document.createElement('p'); message.className = 'collection-intro'; message.textContent = 'Your saved folder is temporarily unavailable. Folio will use it again when it returns.'; list.append(message);
+    $('projects-count').textContent = 'Folder unavailable';
+    if ($('project-dialog').open) renderProjectPicker();
+    return;
+  }
+  const projects = entries.sort((a, b) => {
     const ai = featuredOrder.has(a.libraryId) ? featuredOrder.get(a.libraryId) : Infinity;
     const bi = featuredOrder.has(b.libraryId) ? featuredOrder.get(b.libraryId) : Infinity;
     return ai - bi || (b.savedAt || 0) - (a.savedAt || 0);
@@ -591,21 +601,26 @@ window.FolioSession = { snapshot: () => clone(project) };
 window.addEventListener('beforeunload', event => { if (!window.desktop && savedSnapshot !== JSON.stringify(project)) { event.preventDefault(); event.returnValue = ''; } });
 window.FolioReady = (async () => {
   try {
-    let saved = await openDB();
-    await seedFunTechProjects();
     if (window.desktop) {
       projectFolder = await desktop.getProjectFolder();
+    }
+    let saved = null;
+    try { saved = await openDB(); } catch (_) { db = undefined; }
+    if (db) await seedFunTechProjects().catch(() => {});
+    if (window.desktop) {
       const recovery = await desktop.loadRecovery();
       if (recovery && (!saved || (recovery.savedAt || 0) > (saved.savedAt || 0))) saved = recovery;
     }
     if (!saved && featuredProjects.length) saved = await savedLibraryProject(featuredProjects[0].slug);
     if (projectFolder && saved?.libraryId) {
-      const files = await desktop.listFolderProjects();
-      const match = files.find(item => item.fileName === saved.folderFileName) || files.find(item => item.libraryId === saved.libraryId);
-      if (match) {
-        if (Math.max(match.savedAt, match.modifiedAt) >= (saved.savedAt || 0)) saved = await desktop.openFolderProject(match.fileName);
-        else saved.folderFileName = match.fileName;
-      }
+      try {
+        const files = await desktop.listFolderProjects();
+        const match = files.find(item => item.fileName === saved.folderFileName) || files.find(item => item.libraryId === saved.libraryId);
+        if (match) {
+          if (Math.max(match.savedAt, match.modifiedAt) >= (saved.savedAt || 0)) saved = await desktop.openFolderProject(match.fileName);
+          else saved.folderFileName = match.fileName;
+        }
+      } catch (_) { /* Keep the recovered editor state until the saved folder returns. */ }
     }
     if (saved) { project = validate(saved); savedSnapshot = JSON.stringify(project); }
   } catch (_) { $('save-status').textContent = 'Use Save project to keep your work'; }
