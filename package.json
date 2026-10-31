@@ -24,6 +24,7 @@
     },
     "files": [
       "main.cjs",
+      "app-host.cjs",
       "preload.cjs",
       "index.html",
       "style.css",

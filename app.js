@@ -598,6 +598,18 @@ document.addEventListener('keydown', event => {
   if (event.key === 'ArrowRight' && selected < project.slides.length - 1) selectSlide(selected + 1);
 });
 window.FolioSession = { snapshot: () => clone(project) };
+// Inside Canopy, Folio keeps its projects in the space's Folio folder, and the hub hands over pictures and projects
+// from the space's Files.
+if (window.desktop?.canopy) {
+  $('change-project-folder').hidden = true;
+  $('project-dialog-change-folder').hidden = true;
+  desktop.onCanopyImages(async images => {
+    await window.FolioReady;
+    for (const image of images) await addLayerImage(new File([image.bytes], image.name, { type: image.type }));
+  });
+  desktop.onCanopyProject(async value => { await window.FolioReady; try { await importProjectFile(value); } catch (error) { toast('Could not open: ' + error.message); } });
+  desktop.onCanopyOpenProject(async fileName => { await window.FolioReady; if (project.folderFileName !== fileName) await openSavedProject(fileName); });
+}
 window.addEventListener('beforeunload', event => { if (!window.desktop && savedSnapshot !== JSON.stringify(project)) { event.preventDefault(); event.returnValue = ''; } });
 window.FolioReady = (async () => {
   try {
@@ -606,7 +618,8 @@ window.FolioReady = (async () => {
     }
     let saved = null;
     try { saved = await openDB(); } catch (_) { db = undefined; }
-    if (db) await seedFunTechProjects().catch(() => {});
+    // A Canopy space starts empty; the Fun Tech samples belong to the standalone library.
+    if (db && !window.desktop?.canopy) await seedFunTechProjects().catch(() => {});
     if (window.desktop) {
       const recovery = await desktop.loadRecovery();
       if (recovery && (!saved || (recovery.savedAt || 0) > (saved.savedAt || 0))) saved = recovery;

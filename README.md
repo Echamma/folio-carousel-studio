@@ -8,6 +8,8 @@ Open `dist/Folio-Carousel-Studio-1.5.2.exe`. This is a portable app; installatio
 
 To run from source: `npm install`, then `npm start`. To rebuild the portable executable: `npm run build`.
 
+Folio also runs inside Canopy, next to Forma and StreamCuts. The editor's main-process side lives in `app-host.cjs`, which `main.cjs` and Canopy both create. Inside a Canopy space, Folio's project folder is the space's `Folio` folder (Change folder is hidden), exports go straight to the space's `Files` instead of a save dialog, and pictures sent from the space become movable image layers on the current slide. The Fun Tech samples stay in the standalone library.
+
 ## Create
 
 - Select one of ten editable layouts: Introduction, Text Only, Checklist, Quote, Image Center, Image Left, Image Right, Image Compare, Thank You, and Navy Ribbon.
