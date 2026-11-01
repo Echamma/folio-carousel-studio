@@ -443,6 +443,11 @@ impl Folio {
     fn add_image_layer(&mut self, path: &Path) -> Result<(), String> {
         let url = picture_url(path)?;
         let (w, h) = image::image_dimensions(path).map_err(|e| e.to_string())?;
+        self.add_image_data(url, w, h)
+    }
+
+    fn add_image_data(&mut self, url: String, w: u32, h: u32) -> Result<(), String> {
+        if w == 0 || h == 0 { return Err("The picture is empty".into()); }
         let scale = 440.0 / w.max(h) as f32;
         let (width, height) = ((w as f32 * scale).round().max(40.0), (h as f32 * scale).round().max(40.0));
         let slide_h = self.project.height();
@@ -813,6 +818,23 @@ impl CanopyApp for Folio {
             if right {
                 self.selected = (self.selected + 1).min(self.project.slides.len() - 1);
             }
+        }
+        // egui delivers clipboard images as a paste event; text fields retain normal text paste.
+        let pasted = if host.focused() && !ui.ctx().egui_wants_keyboard_input() && self.preview_index.is_none() {
+            ui.input(|i| i.events.iter().find_map(|event| match event { egui::Event::PasteImage(image) => Some(image.clone()), _ => None }))
+        } else { None };
+        if let Some(image) = pasted {
+            let result = (|| -> Result<(), String> {
+                let (w, h) = (u32::try_from(image.size[0]).map_err(|e| e.to_string())?, u32::try_from(image.size[1]).map_err(|e| e.to_string())?);
+                let pixels: Vec<u8> = image.pixels.iter().flat_map(|pixel| pixel.to_srgba_unmultiplied()).collect();
+                let rgba = image::RgbaImage::from_raw(w, h, pixels).ok_or("Invalid clipboard image")?;
+                let mut png = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::ImageRgba8(rgba).write_to(&mut png, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+                let bytes = png.into_inner();
+                if bytes.len() > 15 * 1024 * 1024 { return Err("Use photos under 15 MB".into()); }
+                self.add_image_data(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)), w, h)
+            })();
+            if let Err(error) = result { self.notice = Some(error); }
         }
         if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             if let Err(error) = self.save() {
