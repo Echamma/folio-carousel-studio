@@ -957,6 +957,29 @@ impl CanopyApp for Folio {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn image_paste_event_adds_a_layer() {
+        use canopy_ui::{CanopyApp, Host, Place, SpaceInfo};
+        struct TestHost;
+        impl Host for TestHost {
+            fn toast(&mut self, _: String) {}
+            fn exported(&mut self, _: std::path::PathBuf) {}
+        }
+        let root = std::env::temp_dir().join(format!("folio-paste-{}", super::new_id()));
+        let place = Place { space: Some(SpaceInfo { id: "test".into(), name: "test".into(), dir: root.clone() }), projects_dir: root.clone(), data_dir: root.clone(), exports_dir: root.clone() };
+        let mut app = super::Folio::new(place);
+        let ctx = egui::Context::default();
+        canopy_ui::install(&ctx);
+        let image = egui::ColorImage::new([2, 2], vec![egui::Color32::from_rgba_unmultiplied(200, 50, 20, 128); 4]);
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0))), events: vec![egui::Event::PasteImage(std::sync::Arc::new(image))], focused: true, ..Default::default() };
+        let mut output = ctx.run_ui(input, |ui| app.ui(ui, &mut TestHost));
+        output.textures_delta.clear();
+        let layer = app.project.slides[0].layers.last().expect("image paste adds a layer");
+        assert_eq!(layer.kind, "image");
+        assert!(layer.src.as_deref().unwrap().starts_with("data:image/png;base64,"));
+        assert!(app.edited_at.is_some());
+    }
+
+    #[test]
     fn received_image_uses_slide_coordinates_and_can_be_saved() {
         use canopy_ui::{CanopyApp, Host, Place, SharedFile, SpaceInfo};
         struct TestHost;
