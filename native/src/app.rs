@@ -59,6 +59,9 @@ pub struct Folio {
     /// The layout picker, and its thumbnails with the brand they were drawn in (accent, theme, font).
     show_layouts: bool,
     layout_thumbs: Option<((String, String, String), Vec<TextureHandle>)>,
+    /// The preview dialog's slide, and its picture (with what it was drawn from).
+    preview_index: Option<usize>,
+    preview_big: Option<(TextureHandle, Project, usize)>,
 }
 
 impl Folio {
@@ -69,7 +72,8 @@ impl Folio {
             .and_then(|doc| storage::load_document(&place, &doc.id).ok())
             .unwrap_or_else(|| Project::starter(&mut new_id));
         Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None,
-            search: String::new(), covers: Default::default(), show_layouts: false, layout_thumbs: None }
+            search: String::new(), covers: Default::default(), show_layouts: false, layout_thumbs: None,
+            preview_index: None, preview_big: None }
     }
 
     fn open(&mut self, project: Project) {
@@ -120,6 +124,39 @@ impl Folio {
                     Err(error) => host.toast(error),
                 }
             }
+            if ui.button("Preview").on_hover_text("Swipe through the carousel").clicked() {
+                self.preview_index = Some(self.selected);
+            }
+            ui.menu_button("File", |ui| {
+                if ui.button("Open a project file…").clicked() {
+                    ui.close();
+                    if let Some(path) = rfd::FileDialog::new().add_filter("Folio project", &["json"]).pick_file() {
+                        // Opened as a new project in the folder, as Electron imports one.
+                        match storage::load(&path) {
+                            Ok(mut project) => {
+                                project.extra.remove("folderFileName");
+                                project.extra.remove("libraryId");
+                                self.open(project);
+                                self.edited_at = Some(Instant::now());
+                            }
+                            Err(error) => self.notice = Some(error),
+                        }
+                    }
+                }
+                if ui.button("Save a copy to file…").clicked() {
+                    ui.close();
+                    let name = format!("{}.folio.json", storage::safe_name(&self.project.name));
+                    if let Some(path) = rfd::FileDialog::new().set_file_name(name).add_filter("Folio project", &["json"]).save_file() {
+                        let mut copy = self.project.clone();
+                        copy.extra.remove("folderFileName");
+                        let written = serde_json::to_string_pretty(&copy).map_err(|e| e.to_string()).and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()));
+                        self.notice = Some(match written {
+                            Ok(()) => "Project file saved.".into(),
+                            Err(error) => error,
+                        });
+                    }
+                }
+            });
             if ui.button("Export slide").on_hover_text("This slide as a PNG, into Files").clicked() {
                 self.export(host, Some(self.selected));
             }
@@ -466,6 +503,42 @@ impl Folio {
         }
     }
 
+    /// Electron's preview: one slide at a time, large, with arrows (and the arrow keys) to swipe through.
+    fn preview_window(&mut self, ui: &mut Ui) {
+        let Some(index) = self.preview_index else { return };
+        let count = self.project.slides.len();
+        let index = index.min(count - 1);
+        if self.preview_big.as_ref().is_none_or(|(_, project, i)| *project != self.project || *i != index) {
+            let pixmap = render::slide(&self.project, index, &mut self.pictures).0;
+            let image = egui::ColorImage::from_rgba_premultiplied([pixmap.width() as usize, pixmap.height() as usize], pixmap.data());
+            self.preview_big = Some((ui.ctx().load_texture("folio-preview-big", image, TextureOptions::LINEAR), self.project.clone(), index));
+        }
+        let (left, right) = ui.input(|i| (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight)));
+        let mut go = if left { index.checked_sub(1) } else if right && index + 1 < count { Some(index + 1) } else { None };
+        let height = (ui.ctx().content_rect().height() - 160.0).max(300.0);
+        let modal = egui::Modal::new(ui.scope_id().with("folio-preview")).show(ui.ctx(), |ui| {
+            ui.label(egui::RichText::new("Take it for a swipe.").font(font::bold(18.0)));
+            if let Some((texture, ..)) = &self.preview_big {
+                let size = texture.size_vec2();
+                ui.add(egui::Image::new(texture).fit_to_exact_size(size * (height / size.y)));
+            }
+            ui.horizontal(|ui| {
+                if ui.add_enabled(index > 0, egui::Button::new("←")).clicked() {
+                    go = Some(index - 1);
+                }
+                ui.label(format!("{} / {}", index + 1, count));
+                if ui.add_enabled(index + 1 < count, egui::Button::new("→")).clicked() {
+                    go = Some(index + 1);
+                }
+            });
+        });
+        if let Some(next) = go {
+            self.preview_index = Some(next);
+        } else if modal.should_close() {
+            self.preview_index = None;
+        }
+    }
+
     /// Picking the navy ribbon layout also sets its look, as Electron's layout grid does.
     fn apply_layout_extras(&mut self) {
         if self.slide().layout == "navy-ribbon" {
@@ -606,7 +679,7 @@ impl Folio {
 impl CanopyApp for Folio {
     fn ui(&mut self, ui: &mut Ui, host: &mut dyn Host) {
         let before = self.project.clone();
-        if host.focused() && !ui.ctx().egui_wants_keyboard_input() {
+        if host.focused() && !ui.ctx().egui_wants_keyboard_input() && self.preview_index.is_none() {
             let (undo, redo, left, right) = ui.input(|i| (
                 i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift,
                 i.modifiers.command && (i.key_pressed(egui::Key::Y) || (i.modifiers.shift && i.key_pressed(egui::Key::Z))),
@@ -651,6 +724,7 @@ impl CanopyApp for Folio {
         ui.scope_builder(UiBuilder::new().max_rect(middle), |ui| self.canvas(ui));
         self.projects_window(ui);
         self.layouts_window(ui);
+        self.preview_window(ui);
         if let Some(notice) = self.notice.take() {
             host.toast(notice);
         }
