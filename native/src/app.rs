@@ -48,6 +48,10 @@ pub struct Folio {
     edited_at: Option<Instant>,
     show_projects: bool,
     notice: Option<String>,
+    /// The element chosen on the slide, and one being dragged: its id, whether by its resize corner, and where it
+    /// was (x, y, width, height).
+    selected_layer: Option<String>,
+    element_drag: Option<(String, bool, (f32, f32, f32, f32))>,
 }
 
 impl Folio {
@@ -55,7 +59,7 @@ impl Folio {
         let project = storage::list(&place).iter().max_by_key(|d| d.saved_at)
             .and_then(|doc| storage::load_document(&place, &doc.id).ok())
             .unwrap_or_else(|| Project::starter(&mut new_id));
-        Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None }
+        Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None }
     }
 
     fn open(&mut self, project: Project) {
@@ -344,6 +348,64 @@ impl Folio {
         }
         if self.reduced {
             ui.painter().text(pos2(rect.left(), rect.bottom() + 6.0), egui::Align2::LEFT_TOP, "Some text was made smaller or cut to fit this slide.", font::ui(12.0), color::INK_MUTED);
+        }
+        self.elements(ui, rect, scale);
+    }
+
+    /// Electron's element handles: drag an element to move it, its lower-right corner to resize it (a picture keeps
+    /// its shape; text stretches), kept inside the slide; click to select it, topmost first.
+    fn elements(&mut self, ui: &mut Ui, slide: Rect, scale: f32) {
+        let h = self.project.height();
+        let index = self.selected.min(self.project.slides.len() - 1);
+        let to_screen = |x: f32, y: f32| pos2(slide.left() + x * scale, slide.top() + y * scale);
+        let layers: Vec<(String, Rect)> = self.project.slides[index].layers.iter()
+            .map(|l| (l.id.clone(), Rect::from_min_max(to_screen(l.x, l.y), to_screen(l.x + l.width, l.y + l.height))))
+            .collect();
+        for (id, rect) in &layers {
+            let selected = self.selected_layer.as_ref() == Some(id);
+            ui.painter().rect_stroke(*rect, 2.0, egui::Stroke::new(if selected { 1.5 } else { 0.8 }, if selected { color::SUN } else { color::INK_MUTED.gamma_multiply(0.6) }), egui::StrokeKind::Outside);
+            if selected {
+                ui.painter().rect_filled(Rect::from_center_size(rect.max, vec2(10.0, 10.0)), 2.0, color::SUN);
+            }
+        }
+        // Topmost (last drawn) wins, as overlapping elements stack.
+        for (id, rect) in layers.iter().rev() {
+            let corner = Rect::from_center_size(rect.max, vec2(16.0, 16.0));
+            let response = ui.interact(rect.union(corner), ui.scope_id().with(("folio-element", id)), egui::Sense::click_and_drag());
+            if let Some(p) = response.hover_pos() {
+                ui.ctx().set_cursor_icon(if corner.contains(p) { egui::CursorIcon::ResizeNwSe } else { egui::CursorIcon::Grab });
+            }
+            if response.drag_started() || response.clicked() {
+                self.selected_layer = Some(id.clone());
+                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(rect.center());
+                let layer = self.project.slides[index].layers.iter().find(|l| &l.id == id).unwrap();
+                self.element_drag = Some((id.clone(), corner.contains(origin), (layer.x, layer.y, layer.width, layer.height)));
+            }
+            if response.dragged() {
+                let Some((dragged, resizing, (x, y, w, h0))) = self.element_drag.clone().filter(|d| &d.0 == id) else { continue };
+                let delta = response.drag_delta();
+                let total = ui.input(|i| i.pointer.interact_pos()).zip(ui.input(|i| i.pointer.press_origin())).map(|(now, from)| (now - from) / scale).unwrap_or(delta);
+                let Some(layer) = self.project.slides[index].layers.iter_mut().find(|l| l.id == dragged) else { continue };
+                if resizing {
+                    if layer.kind == "image" {
+                        let factor = 1.0 + if (total.x / w).abs() > (total.y / h0).abs() { total.x / w } else { total.y / h0 };
+                        let bounded = factor.clamp((40.0 / w).max(40.0 / h0), ((1080.0 - x) / w).min((h - y) / h0));
+                        (layer.width, layer.height) = ((w * bounded).round(), (h0 * bounded).round());
+                    } else {
+                        layer.width = (w + total.x).clamp(50.0, 1080.0 - x).round();
+                        layer.height = (h0 + total.y).clamp(40.0, h - y).round();
+                    }
+                } else {
+                    layer.x = (x + total.x).clamp(0.0, 1080.0 - layer.width).round();
+                    layer.y = (y + total.y).clamp(0.0, h - layer.height).round();
+                }
+            }
+            if response.drag_stopped() {
+                self.element_drag = None;
+            }
+            if response.contains_pointer() {
+                break;
+            }
         }
     }
 
