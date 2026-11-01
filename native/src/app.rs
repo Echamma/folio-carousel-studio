@@ -858,7 +858,16 @@ impl CanopyApp for Folio {
         }
         // egui delivers clipboard images as a paste event; text fields retain normal text paste.
         let pasted = if host.focused() && !ui.ctx().egui_wants_keyboard_input() && self.preview_index.is_none() {
-            ui.input(|i| i.events.iter().find_map(|event| match event { egui::Event::PasteImage(image) => Some(image.clone()), _ => None }))
+            let (image, text_paste) = ui.input(|i| (
+                i.events.iter().find_map(|event| match event { egui::Event::PasteImage(image) => Some(image.clone()), _ => None }),
+                i.events.iter().any(|event| matches!(event, egui::Event::Paste(_))),
+            ));
+            // Some clipboard sources provide text and an image; egui sends only text in that case.
+            image.or_else(|| text_paste.then(|| {
+                let mut clipboard = arboard::Clipboard::new().ok()?;
+                let image = clipboard.get_image().ok()?;
+                Some(std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied([image.width, image.height], &image.bytes)))
+            }).flatten())
         } else { None };
         if let Some(image) = pasted {
             let result = (|| -> Result<(), String> {
