@@ -101,8 +101,10 @@ impl Folio {
     pub fn new(place: Place) -> Self {
         // A standalone Folio adds the Fun Tech carousels to its folder the first time, as Electron does.
         samples::seed(&place);
-        let project = storage::list(&place).iter().max_by_key(|d| d.saved_at)
-            .and_then(|doc| storage::load_document(&place, &doc.id).ok())
+        let documents = storage::list(&place);
+        let latest = documents.iter().max_by_key(|d| d.saved_at);
+        let project = storage::load_recovery(&place, latest.map_or(0, |d| d.saved_at))
+            .or_else(|| latest.and_then(|doc| storage::load_document(&place, &doc.id).ok()))
             .unwrap_or_else(|| Project::starter(&mut new_id));
         Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, slide_rect: None, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None,
             search: String::new(), covers: Default::default(), show_layouts: false, layout_thumbs: None,
@@ -940,8 +942,11 @@ impl CanopyApp for Folio {
     }
 
     fn save(&mut self) -> Result<(), String> {
+        // Write the recovery first so a project-folder failure still leaves the current work available.
         self.edited_at = None;
-        storage::save(&self.place, &mut self.project, new_id).map(|_| ())
+        storage::save_recovery(&self.place, &self.project)?;
+        storage::save(&self.place, &mut self.project, new_id)?;
+        Ok(())
     }
 
     fn title(&self) -> String {

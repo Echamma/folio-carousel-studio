@@ -62,6 +62,27 @@ pub fn load_document(place: &Place, file_name: &str) -> Result<Project, String> 
     Ok(project)
 }
 
+/// A separate recovery copy, compatible with Electron's last-session.json.
+pub fn save_recovery(place: &Place, project: &Project) -> Result<(), String> {
+    std::fs::create_dir_all(&place.data_dir).map_err(|e| e.to_string())?;
+    let mut snapshot = project.clone();
+    let now = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+    snapshot.extra.insert("savedAt".into(), now.into());
+    let bytes = serde_json::to_vec(&snapshot).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_PROJECT { return Err("Project exceeds 150 MB.".into()); }
+    let target = place.data_dir.join("last-session.json");
+    let temporary = place.data_dir.join(format!("last-session.{}.tmp", std::process::id()));
+    std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(&temporary, &target).map_err(|e| { let _ = std::fs::remove_file(&temporary); e.to_string() })
+}
+
+/// A recovery copy is only used when it is newer than the last project file.
+pub fn load_recovery(place: &Place, latest_saved: u64) -> Option<Project> {
+    let project = load(&place.data_dir.join("last-session.json")).ok()?;
+    let saved = project.extra.get("savedAt").and_then(Value::as_u64).unwrap_or(0);
+    (saved > latest_saved).then_some(project)
+}
+
 /// Saves the project in its file (a new one, named after it, the first time) and returns the file name.
 pub fn save(place: &Place, project: &mut Project, id: impl FnOnce() -> String) -> Result<String, String> {
     let folder = &place.projects_dir;
@@ -98,6 +119,22 @@ pub fn save(place: &Place, project: &mut Project, id: impl FnOnce() -> String) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_survives_an_unwritable_project_folder_and_respects_age() {
+        let root = std::env::temp_dir().join(format!("folio-recovery-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let projects = root.join("not-a-directory");
+        std::fs::write(&projects, b"file").unwrap();
+        let place = Place { space: None, projects_dir: projects, data_dir: root.join("data"), exports_dir: root.join("Files") };
+        let mut project = Project::starter(&mut || "id".into());
+        project.name = "Recover me".into();
+        save_recovery(&place, &project).unwrap();
+        assert!(save(&place, &mut project, || "id".into()).is_err());
+        assert_eq!(load_recovery(&place, 0).unwrap().name, "Recover me");
+        assert!(load_recovery(&place, u64::MAX).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn projects_are_saved_and_listed_like_electron_folio() {
