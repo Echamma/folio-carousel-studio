@@ -21,6 +21,33 @@ fn new_id() -> String {
     format!("{:08x}-{:04x}-4{:03x}-8{:03x}-{:012x}", n as u32 ^ count as u32, (n >> 32) as u16, count & 0xfff, (seconds >> 12) & 0xfff, seconds)
 }
 
+/// The Figma reference names, in the order of the first nine layouts (Electron's `referenceNames`).
+const REFERENCE_NAMES: [&str; 9] = ["Introduction", "Text Only", "Checklist", "Quote", "Image Center", "Image Left", "Image Right", "Image Compare", "Thank You"];
+
+/// Electron Folio's bundled Figma references: `assets\references` next to the exe or above it, or in this checkout.
+fn references_folder() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok();
+    let beside = exe.iter().flat_map(|exe| exe.ancestors().skip(1).take(6)).map(|dir| dir.join("assets").join("references"));
+    let checkout = std::iter::once(Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("assets").join("references"));
+    beside.chain(checkout).find(|dir| dir.is_dir())
+}
+
+/// A reference drawn about 260 px tall: SVGs through resvg, pictures through `image`.
+fn reference_picture(path: &Path) -> Option<egui::ColorImage> {
+    let image = if path.extension().is_some_and(|e| e == "svg") {
+        let tree = resvg::usvg::Tree::from_data(&std::fs::read(path).ok()?, &resvg::usvg::Options::default()).ok()?;
+        let size = tree.size();
+        let scale = 260.0 / size.height();
+        let mut pixmap = tiny_skia::Pixmap::new((size.width() * scale).ceil() as u32, 260)?;
+        resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+        image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), pixmap.take())?
+    } else {
+        let picture = image::open(path).ok()?;
+        picture.thumbnail(1000, 260).to_rgba8()
+    };
+    Some(egui::ColorImage::from_rgba_premultiplied([image.width() as usize, image.height() as usize], image.as_raw()))
+}
+
 /// A picture file as the data URL Folio projects embed (PNG, JPEG or WebP under 15 MB, as in Electron).
 fn picture_url(path: &Path) -> Result<String, String> {
     let mime = match path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
@@ -62,6 +89,10 @@ pub struct Folio {
     /// The preview dialog's slide, and its picture (with what it was drawn from).
     preview_index: Option<usize>,
     preview_big: Option<(TextureHandle, Project, usize)>,
+    /// The Figma reference library: open, the size and theme shown, and pictures read so far by file name.
+    show_references: bool,
+    reference_look: (String, String),
+    reference_pictures: std::collections::HashMap<String, Option<TextureHandle>>,
 }
 
 impl Folio {
@@ -73,7 +104,8 @@ impl Folio {
             .unwrap_or_else(|| Project::starter(&mut new_id));
         Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None,
             search: String::new(), covers: Default::default(), show_layouts: false, layout_thumbs: None,
-            preview_index: None, preview_big: None }
+            preview_index: None, preview_big: None, show_references: false, reference_look: (String::new(), String::new()),
+            reference_pictures: Default::default() }
     }
 
     fn open(&mut self, project: Project) {
@@ -255,9 +287,18 @@ impl Folio {
         if changed {
             self.apply_layout_extras();
         }
-        if ui.button("Pick a layout…").clicked() {
-            self.show_layouts = true;
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Pick a layout…").clicked() {
+                self.show_layouts = true;
+            }
+            if references_folder().is_some() && ui.button("Figma references…").on_hover_text("The 36 original layout references").clicked() {
+                self.show_references = true;
+                self.reference_look = (
+                    if self.project.format == "square" { "Square" } else { "Portrait" }.into(),
+                    if self.project.theme == "dark" { "Dark" } else { "Light" }.into(),
+                );
+            }
+        });
         let slide = self.slide();
         ui.label("Eyebrow");
         ui.add(egui::TextEdit::singleline(&mut slide.eyebrow).desired_width(f32::INFINITY));
@@ -539,6 +580,77 @@ impl Folio {
         }
     }
 
+    /// Electron's reference library: the original Figma layouts for a size and theme; picking one applies its layout
+    /// to the slide and its size and theme to the project. The panoramic navy original starts the navy carousel.
+    fn references_window(&mut self, ui: &mut Ui) {
+        if !self.show_references {
+            return;
+        }
+        let Some(folder) = references_folder() else { return };
+        let (format, theme) = self.reference_look.clone();
+        let mut names: Vec<String> = REFERENCE_NAMES.iter().map(|name| {
+            let stem = format!("Size={format}, Theme={theme}, Sections={name}");
+            if folder.join(format!("{stem}.svg")).is_file() { format!("{stem}.svg") } else { format!("{stem}.png") }
+        }).collect();
+        names.push("Untitled.png".into());
+        // One new picture a frame.
+        if let Some(name) = names.iter().find(|n| !self.reference_pictures.contains_key(*n)) {
+            let texture = reference_picture(&folder.join(name)).map(|image| ui.ctx().load_texture(format!("folio-ref-{name}"), image, TextureOptions::LINEAR));
+            self.reference_pictures.insert(name.clone(), texture);
+            ui.ctx().request_repaint();
+        }
+        let mut picked = None;
+        let modal = egui::Modal::new(ui.scope_id().with("folio-references")).show(ui.ctx(), |ui| {
+            ui.set_width(640.0);
+            ui.label(egui::RichText::new("Your Figma references").font(font::bold(18.0)));
+            ui.label(egui::RichText::new("Choose a reference to apply its layout, format and theme.").color(color::INK_MUTED));
+            ui.horizontal(|ui| {
+                for look in ["Portrait", "Square"] {
+                    ui.selectable_value(&mut self.reference_look.0, look.into(), look);
+                }
+                ui.separator();
+                for look in ["Light", "Dark"] {
+                    ui.selectable_value(&mut self.reference_look.1, look.into(), look);
+                }
+            });
+            egui::ScrollArea::vertical().id_salt("folio-references-grid").max_height(480.0).show(ui, |ui| {
+                egui::Grid::new("folio-reference-grid").spacing([10.0, 10.0]).show(ui, |ui| {
+                    for (i, name) in names.iter().enumerate() {
+                        if i > 0 && i % 4 == 0 {
+                            ui.end_row();
+                        }
+                        ui.vertical(|ui| {
+                            let label = if i < REFERENCE_NAMES.len() { REFERENCE_NAMES[i] } else { "Navy ribbon carousel" };
+                            let clicked = match self.reference_pictures.get(name) {
+                                Some(Some(texture)) => ui.add(egui::Button::image(egui::Image::new(texture).fit_to_exact_size(vec2(130.0, 162.0)))).clicked(),
+                                Some(None) => ui.add_sized([130.0, 162.0], egui::Button::new("(missing)")).clicked(),
+                                None => ui.add_sized([130.0, 162.0], egui::Button::new("…")).clicked(),
+                            };
+                            ui.label(egui::RichText::new(label).font(font::ui(12.0)));
+                            if clicked {
+                                picked = Some(i);
+                            }
+                        });
+                    }
+                });
+            });
+        });
+        if let Some(i) = picked {
+            if i < REFERENCE_NAMES.len() {
+                self.slide().layout = LAYOUTS[i].0.into();
+                self.project.format = format.to_lowercase();
+                self.project.theme = theme.to_lowercase();
+                self.notice = Some(format!("{} layout applied.", LAYOUTS[i].1));
+            } else {
+                self.open(samples::navy(&mut new_id));
+                self.edited_at = Some(Instant::now());
+            }
+            self.show_references = false;
+        } else if modal.should_close() {
+            self.show_references = false;
+        }
+    }
+
     /// Picking the navy ribbon layout also sets its look, as Electron's layout grid does.
     fn apply_layout_extras(&mut self) {
         if self.slide().layout == "navy-ribbon" {
@@ -725,6 +837,7 @@ impl CanopyApp for Folio {
         self.projects_window(ui);
         self.layouts_window(ui);
         self.preview_window(ui);
+        self.references_window(ui);
         if let Some(notice) = self.notice.take() {
             host.toast(notice);
         }
