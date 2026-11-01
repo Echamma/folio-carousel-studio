@@ -3,6 +3,7 @@
 
 use crate::model::{FONTS, LAYOUTS, Layer, Project, Slide};
 use crate::render::{self, Pictures};
+use crate::samples;
 use crate::storage;
 use base64::Engine;
 use canopy_ui::{CanopyApp, Host, Place, Receipt, SharedFile, color, font};
@@ -52,14 +53,23 @@ pub struct Folio {
     /// was (x, y, width, height).
     selected_layer: Option<String>,
     element_drag: Option<(String, bool, (f32, f32, f32, f32))>,
+    /// The project gallery's search, and project covers by file name (with the time they were saved).
+    search: String,
+    covers: std::collections::HashMap<String, (u64, TextureHandle)>,
+    /// The layout picker, and its thumbnails with the brand they were drawn in (accent, theme, font).
+    show_layouts: bool,
+    layout_thumbs: Option<((String, String, String), Vec<TextureHandle>)>,
 }
 
 impl Folio {
     pub fn new(place: Place) -> Self {
+        // A standalone Folio adds the Fun Tech carousels to its folder the first time, as Electron does.
+        samples::seed(&place);
         let project = storage::list(&place).iter().max_by_key(|d| d.saved_at)
             .and_then(|doc| storage::load_document(&place, &doc.id).ok())
             .unwrap_or_else(|| Project::starter(&mut new_id));
-        Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None }
+        Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None,
+            search: String::new(), covers: Default::default(), show_layouts: false, layout_thumbs: None }
     }
 
     fn open(&mut self, project: Project) {
@@ -79,10 +89,20 @@ impl Folio {
             if ui.button("Projects").clicked() {
                 self.show_projects = true;
             }
-            if ui.button("New").clicked() {
-                self.open(Project::starter(&mut new_id));
-                self.edited_at = Some(Instant::now());
-            }
+            ui.menu_button("New", |ui| {
+                let start = if ui.button("Starter carousel").on_hover_text("The art of a good carousel: five layouts to rewrite").clicked() {
+                    Some(Project::starter(&mut new_id))
+                } else if ui.button("Navy ribbon carousel").on_hover_text("Eight square slides with torn white ribbons").clicked() {
+                    Some(samples::navy(&mut new_id))
+                } else {
+                    None
+                };
+                if let Some(project) = start {
+                    self.open(project);
+                    self.edited_at = Some(Instant::now());
+                    ui.close();
+                }
+            });
             if ui.add_enabled(!self.undo.is_empty(), egui::Button::new("Undo")).clicked() {
                 if let Some(previous) = self.undo.pop() {
                     self.redo.push(std::mem::replace(&mut self.project, previous));
@@ -193,7 +213,15 @@ impl Folio {
                 ui.selectable_value(&mut layout, id.to_owned(), name);
             }
         });
+        let changed = layout != slide.layout;
         slide.layout = layout;
+        if changed {
+            self.apply_layout_extras();
+        }
+        if ui.button("Pick a layout…").clicked() {
+            self.show_layouts = true;
+        }
+        let slide = self.slide();
         ui.label("Eyebrow");
         ui.add(egui::TextEdit::singleline(&mut slide.eyebrow).desired_width(f32::INFINITY));
         ui.label("Title");
@@ -438,19 +466,130 @@ impl Folio {
         }
     }
 
+    /// Picking the navy ribbon layout also sets its look, as Electron's layout grid does.
+    fn apply_layout_extras(&mut self) {
+        if self.slide().layout == "navy-ribbon" {
+            (self.project.theme, self.project.accent) = ("dark".into(), "#f3ddc1".into());
+            let slide = self.slide();
+            slide.eyebrow.clear();
+            slide.swipe = false;
+        }
+    }
+
+    /// A slide drawn small, as a texture (covers and layout thumbnails).
+    fn thumbnail(ctx: &egui::Context, name: String, project: &Project, index: usize, pictures: &mut Pictures, width: u32) -> TextureHandle {
+        let pixmap = render::slide(project, index, pictures).0;
+        let full = image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), pixmap.data().to_vec()).unwrap();
+        let small = image::imageops::thumbnail(&full, width, width * pixmap.height() / pixmap.width());
+        let image = egui::ColorImage::from_rgba_premultiplied([small.width() as usize, small.height() as usize], small.as_raw());
+        ctx.load_texture(name, image, TextureOptions::LINEAR)
+    }
+
+    /// Electron's layout grid: each layout drawn as a sample square slide in this project's brand; picking one sets
+    /// the current slide's layout.
+    fn layouts_window(&mut self, ui: &mut Ui) {
+        if !self.show_layouts {
+            return;
+        }
+        let brand = (self.project.accent.clone(), self.project.theme.clone(), self.project.font.clone());
+        if self.layout_thumbs.as_ref().is_none_or(|(drawn, _)| *drawn != brand) {
+            let thumbs = LAYOUTS.iter().map(|(id, name, ..)| {
+                let navy = *id == "navy-ribbon";
+                let mut slide = Slide::new(id, String::new());
+                slide.eyebrow = if navy { String::new() } else { "YOUR STORY".into() };
+                slide.title = match *id {
+                    "navy-ribbon" => "What Is A\nQR Code?",
+                    "quote" => "A thought worth sharing.",
+                    "thank-you" => "Thank you.",
+                    "introduction" => "Your next\nbig idea.",
+                    _ => "Title space",
+                }.into();
+                slide.body = if navy { String::new() } else { "A little room for your ideas.".into() };
+                (slide.title_size, slide.swipe) = (104.0, !navy);
+                slide.items = vec!["First idea".into(), "Second idea".into(), "Third idea".into()];
+                let sample = Project {
+                    accent: if navy { "#f3ddc1".into() } else { self.project.accent.clone() }, format: "square".into(),
+                    brand: "YOUR STUDIO".into(), handle: "@yourstudio".into(), slides: vec![slide], ..self.project.clone()
+                };
+                Self::thumbnail(ui.ctx(), format!("folio-layout-{name}"), &sample, 0, &mut self.pictures, 180)
+            }).collect();
+            self.layout_thumbs = Some((brand, thumbs));
+        }
+        let current = self.slide().layout.clone();
+        let mut picked = None;
+        let modal = egui::Modal::new(ui.scope_id().with("folio-layouts")).show(ui.ctx(), |ui| {
+            ui.set_width(620.0);
+            ui.label(egui::RichText::new("Pick a layout").font(font::bold(18.0)));
+            let thumbs = &self.layout_thumbs.as_ref().unwrap().1;
+            egui::Grid::new("folio-layout-grid").spacing([10.0, 10.0]).show(ui, |ui| {
+                for (i, ((id, name, _, description), texture)) in LAYOUTS.iter().zip(thumbs).enumerate() {
+                    ui.vertical(|ui| {
+                        let image = egui::Image::new(texture).fit_to_exact_size(vec2(110.0, 110.0));
+                        let response = ui.add(egui::Button::image(image).selected(*id == current)).on_hover_text(*description);
+                        ui.label(egui::RichText::new(*name).font(font::ui(12.0)));
+                        if response.clicked() {
+                            picked = Some(id.to_string());
+                        }
+                    });
+                    if i % 5 == 4 {
+                        ui.end_row();
+                    }
+                }
+            });
+        });
+        if let Some(id) = picked {
+            self.slide().layout = id;
+            self.apply_layout_extras();
+            self.show_layouts = false;
+        } else if modal.should_close() {
+            self.show_layouts = false;
+        }
+    }
+
+    /// Electron's project gallery: every project in the folder by its cover, searchable by name.
     fn projects_window(&mut self, ui: &mut Ui) {
         if !self.show_projects {
             return;
         }
+        let docs = storage::list(&self.place);
+        // One new cover a frame, so a big folder opens at once and fills in.
+        if let Some(doc) = docs.iter().find(|d| self.covers.get(&d.id).is_none_or(|(at, _)| *at != d.saved_at)) {
+            if let Ok(project) = storage::load_document(&self.place, &doc.id) {
+                let texture = Self::thumbnail(ui.ctx(), format!("folio-cover-{}", doc.id), &project, 0, &mut self.pictures, 160);
+                self.covers.insert(doc.id.clone(), (doc.saved_at, texture));
+            }
+            ui.ctx().request_repaint();
+        }
         let mut opened = None;
         let modal = egui::Modal::new(ui.scope_id().with("folio-projects")).show(ui.ctx(), |ui| {
-            ui.set_width(380.0);
-            ui.label(egui::RichText::new("Folio projects").font(font::bold(18.0)));
-            for doc in storage::list(&self.place) {
-                if ui.button(format!("{}  ·  {}", doc.name, doc.detail)).clicked() {
-                    opened = Some(doc.id);
-                }
-            }
+            ui.set_width(640.0);
+            ui.label(egui::RichText::new("Open a project").font(font::bold(18.0)));
+            ui.label(egui::RichText::new("Choose a carousel by its cover to continue editing.").color(color::INK_MUTED));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search projects").desired_width(f32::INFINITY));
+            let query = self.search.to_lowercase();
+            egui::ScrollArea::vertical().id_salt("folio-gallery").max_height(460.0).show(ui, |ui| {
+                // Four covers a row (a wrapping layout doesn't wrap columns of widgets).
+                egui::Grid::new("folio-gallery-grid").spacing([10.0, 12.0]).show(ui, |ui| {
+                    for (i, doc) in docs.iter().filter(|d| d.name.to_lowercase().contains(&query)).enumerate() {
+                        if i > 0 && i % 4 == 0 {
+                            ui.end_row();
+                        }
+                        ui.vertical(|ui| {
+                            ui.set_width(140.0);
+                            let clicked = match self.covers.get(&doc.id) {
+                                Some((_, texture)) => ui.add(egui::Button::image(egui::Image::new(texture).fit_to_exact_size(vec2(130.0, 162.0)))).clicked(),
+                                None => ui.add_sized([130.0, 162.0], egui::Button::new("…")).clicked(),
+                            };
+                            let name: String = doc.name.chars().take(34).collect();
+                            ui.add(egui::Label::new(egui::RichText::new(name).font(font::ui(12.0))).wrap());
+                            ui.label(egui::RichText::new(&doc.detail).font(font::ui(11.0)).color(color::INK_MUTED));
+                            if clicked {
+                                opened = Some(doc.id.clone());
+                            }
+                        });
+                    }
+                });
+            });
         });
         if let Some(id) = opened {
             match storage::load_document(&self.place, &id) {
@@ -511,6 +650,7 @@ impl CanopyApp for Folio {
         });
         ui.scope_builder(UiBuilder::new().max_rect(middle), |ui| self.canvas(ui));
         self.projects_window(ui);
+        self.layouts_window(ui);
         if let Some(notice) = self.notice.take() {
             host.toast(notice);
         }

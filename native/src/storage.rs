@@ -69,7 +69,10 @@ pub fn save(place: &Place, project: &mut Project, id: impl FnOnce() -> String) -
     let file_name = match project.extra.get("folderFileName").and_then(Value::as_str).filter(|n| valid_file_name(n)) {
         Some(name) => name.to_owned(),
         None => {
-            let suffix: String = id().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(12).collect();
+            // Electron names a library project after its libraryId, anything else after a fresh id.
+            let library = project.extra.get("libraryId").and_then(Value::as_str).unwrap_or("").to_owned();
+            let source = if library.is_empty() { id() } else { library };
+            let suffix: String = source.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(12).collect();
             let stem: String = safe_name(&project.name).chars().take(70).collect();
             let mut name = format!("{stem}--{suffix}.folio.json");
             let mut number = 2;
