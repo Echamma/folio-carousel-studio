@@ -112,11 +112,13 @@ impl Folio {
             reference_pictures: Default::default() }
     }
 
-    fn open(&mut self, project: Project) {
-        let _ = self.save();
+    fn open(&mut self, project: Project) -> Result<(), String> {
+        self.save().map_err(|error| format!("Couldn't save the current project: {error}"))?;
         (self.project, self.selected, self.preview) = (project, 0, None);
+        self.selected_layer = None;
         self.undo.clear();
         self.redo.clear();
+        Ok(())
     }
 
     fn receive_files(&mut self, files: Vec<SharedFile>, at: Option<(f32, f32)>, host: &mut dyn Host) -> Receipt {
@@ -124,11 +126,12 @@ impl Folio {
         for file in files {
             let name = file.name.to_lowercase();
             let taken = if name.ends_with(".folio.json") {
-                storage::load(&file.path).map(|mut project| {
+                storage::load(&file.path).and_then(|mut project| {
                     project.extra.remove("folderFileName");
                     for slide in &mut project.slides { slide.id = new_id(); }
-                    self.open(project);
+                    self.open(project)?;
                     self.edited_at = Some(Instant::now());
+                    Ok(())
                 })
             } else {
                 let before = self.project.clone();
@@ -144,7 +147,10 @@ impl Folio {
                 }
                 result
             };
-            match taken { Ok(()) => receipt.accepted += 1, Err(_) => receipt.skipped.push(file.name) }
+            match taken {
+                Ok(()) => receipt.accepted += 1,
+                Err(error) => { receipt.skipped.push(file.name); receipt.note = Some(error); }
+            }
         }
         if receipt.accepted > 0 { host.toast(format!("Folio took {} file(s)", receipt.accepted)); }
         receipt
@@ -169,8 +175,10 @@ impl Folio {
                     None
                 };
                 if let Some(project) = start {
-                    self.open(project);
-                    self.edited_at = Some(Instant::now());
+                    match self.open(project) {
+                        Ok(()) => self.edited_at = Some(Instant::now()),
+                        Err(error) => self.notice = Some(error),
+                    }
                     ui.close();
                 }
             });
@@ -203,8 +211,10 @@ impl Folio {
                             Ok(mut project) => {
                                 project.extra.remove("folderFileName");
                                 project.extra.remove("libraryId");
-                                self.open(project);
-                                self.edited_at = Some(Instant::now());
+                                match self.open(project) {
+                                    Ok(()) => self.edited_at = Some(Instant::now()),
+                                    Err(error) => self.notice = Some(error),
+                                }
                             }
                             Err(error) => self.notice = Some(error),
                         }
@@ -684,8 +694,10 @@ impl Folio {
                 self.project.theme = theme.to_lowercase();
                 self.notice = Some(format!("{} layout applied.", LAYOUTS[i].1));
             } else {
-                self.open(samples::navy(&mut new_id));
-                self.edited_at = Some(Instant::now());
+                match self.open(samples::navy(&mut new_id)) {
+                    Ok(()) => self.edited_at = Some(Instant::now()),
+                    Err(error) => self.notice = Some(error),
+                }
             }
             self.show_references = false;
         } else if modal.should_close() {
@@ -819,9 +831,8 @@ impl Folio {
             });
         });
         if let Some(id) = opened {
-            match storage::load_document(&self.place, &id) {
-                Ok(project) => self.open(project),
-                Err(error) => self.notice = Some(error),
+            if let Err(error) = storage::load_document(&self.place, &id).and_then(|project| self.open(project)) {
+                self.notice = Some(error);
             }
             self.show_projects = false;
         } else if modal.should_close() {
@@ -944,9 +955,8 @@ impl CanopyApp for Folio {
     }
 
     fn open_document(&mut self, id: &str, host: &mut dyn Host) {
-        match storage::load_document(&self.place, id) {
-            Ok(project) => self.open(project),
-            Err(error) => host.toast(error),
+        if let Err(error) = storage::load_document(&self.place, id).and_then(|project| self.open(project)) {
+            host.toast(error);
         }
     }
 
@@ -965,6 +975,24 @@ impl CanopyApp for Folio {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn failed_save_does_not_switch_projects_or_overwrite_recovery() {
+        use canopy_ui::{Place, SpaceInfo};
+        let root = std::env::temp_dir().join(format!("folio-switch-{}", super::new_id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let projects = root.join("not-a-directory");
+        std::fs::write(&projects, b"file").unwrap();
+        let place = Place { space: Some(SpaceInfo { id: "test".into(), name: "test".into(), dir: root.clone() }), projects_dir: projects, data_dir: root.join("data"), exports_dir: root.clone() };
+        let mut app = super::Folio::new(place);
+        app.project.name = "Current work".into();
+        let mut other = app.project.clone();
+        other.name = "Other".into();
+        assert!(app.open(other).is_err());
+        assert_eq!(app.project.name, "Current work");
+        assert_eq!(super::storage::load_recovery(&app.place, 0).unwrap().name, "Current work");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn image_paste_event_adds_a_layer() {
         use canopy_ui::{CanopyApp, Host, Place, SpaceInfo};
