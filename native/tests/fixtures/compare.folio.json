@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "name": "The art of a good carousel",
+  "format": "portrait",
+  "theme": "light",
+  "accent": "#e65443",
+  "brand": "YOUR STUDIO",
+  "handle": "@yourstudio",
+  "font": "Arial",
+  "slides": [
+    {
+      "id": "s1",
+      "layout": "introduction",
+      "eyebrow": "A NOTE FOR THE CREATORS",
+      "title": "Good design.\nGreat stories.",
+      "body": "Turn your next big idea into something\nworth swiping for.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "s2",
+      "layout": "text",
+      "eyebrow": "THE CREATIVE NOTES",
+      "title": "Start with\nsomething real.",
+      "body": "The best carousels begin with an idea your audience cares about.\n\nTeach something. Share a perspective. Tell a story only you can tell.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "s3",
+      "layout": "checklist",
+      "eyebrow": "THE CREATIVE NOTES",
+      "title": "Make every\nslide count.",
+      "body": "A few small things make a big difference.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "s4",
+      "layout": "quote",
+      "eyebrow": "A THOUGHT WORTH SAVING",
+      "title": "Great things are done by a series of small things brought together.",
+      "body": "— Vincent van Gogh",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "s5",
+      "layout": "thank-you",
+      "eyebrow": "THAT’S A WRAP",
+      "title": "Good ideas\nare better shared.",
+      "body": "Save this for your next creative day.\nFollow along for a little more inspiration.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "x1",
+      "layout": "image-left",
+      "eyebrow": "THE CREATIVE NOTES",
+      "title": "Show and tell with a much longer title that has to shrink to fit the space",
+      "body": "Share something useful. Make it simple, make it thoughtful, make it yours.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "x2",
+      "layout": "text",
+      "eyebrow": "THE CREATIVE NOTES",
+      "title": "مرحبا بالعالم\nكيف حالك",
+      "body": "نص عربي قصير للتجربة",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 88.0,
+      "texture": true,
+      "swipe": true
+    },
+    {
+      "id": "x3",
+      "layout": "navy-ribbon",
+      "eyebrow": "",
+      "title": "CONNECT:",
+      "body": "It is a physical copy-paste button for your camera.",
+      "items": [
+        "Start with a clear idea",
+        "Make every slide count",
+        "Finish with a next step"
+      ],
+      "image": "",
+      "image2": "",
+      "layers": [],
+      "titleSize": 64.0,
+      "texture": true,
+      "swipe": false
+    }
+  ]
+}
