@@ -71,6 +71,8 @@ pub struct Folio {
     /// The selected slide as drawn, and what it was drawn from.
     preview: Option<(TextureHandle, Project, usize)>,
     reduced: bool,
+    /// Last drawn slide rectangle in window coordinates, for file drop placement.
+    slide_rect: Option<Rect>,
     undo: Vec<Project>,
     redo: Vec<Project>,
     edited_at: Option<Instant>,
@@ -102,7 +104,7 @@ impl Folio {
         let project = storage::list(&place).iter().max_by_key(|d| d.saved_at)
             .and_then(|doc| storage::load_document(&place, &doc.id).ok())
             .unwrap_or_else(|| Project::starter(&mut new_id));
-        Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None,
+        Self { place, project, selected: 0, pictures: Pictures::default(), preview: None, reduced: false, slide_rect: None, undo: Vec::new(), redo: Vec::new(), edited_at: None, show_projects: false, notice: None, selected_layer: None, element_drag: None,
             search: String::new(), covers: Default::default(), show_layouts: false, layout_thumbs: None,
             preview_index: None, preview_big: None, show_references: false, reference_look: (String::new(), String::new()),
             reference_pictures: Default::default() }
@@ -113,6 +115,37 @@ impl Folio {
         (self.project, self.selected, self.preview) = (project, 0, None);
         self.undo.clear();
         self.redo.clear();
+    }
+
+    fn receive_files(&mut self, files: Vec<SharedFile>, at: Option<(f32, f32)>, host: &mut dyn Host) -> Receipt {
+        let mut receipt = Receipt::default();
+        for file in files {
+            let name = file.name.to_lowercase();
+            let taken = if name.ends_with(".folio.json") {
+                storage::load(&file.path).map(|mut project| {
+                    project.extra.remove("folderFileName");
+                    for slide in &mut project.slides { slide.id = new_id(); }
+                    self.open(project);
+                    self.edited_at = Some(Instant::now());
+                })
+            } else {
+                let before = self.project.clone();
+                let result = picture_url(&file.path).and_then(|url| {
+                    let (w, h) = image::image_dimensions(&file.path).map_err(|e| e.to_string())?;
+                    self.add_image_data(url, w, h, at)
+                });
+                if result.is_ok() {
+                    self.undo.push(before);
+                    if self.undo.len() > 100 { self.undo.remove(0); }
+                    self.redo.clear();
+                    self.edited_at = Some(Instant::now());
+                }
+                result
+            };
+            match taken { Ok(()) => receipt.accepted += 1, Err(_) => receipt.skipped.push(file.name) }
+        }
+        if receipt.accepted > 0 { host.toast(format!("Folio took {} file(s)", receipt.accepted)); }
+        receipt
     }
 
     fn slide(&mut self) -> &mut Slide {
@@ -443,10 +476,10 @@ impl Folio {
     fn add_image_layer(&mut self, path: &Path) -> Result<(), String> {
         let url = picture_url(path)?;
         let (w, h) = image::image_dimensions(path).map_err(|e| e.to_string())?;
-        self.add_image_data(url, w, h)
+        self.add_image_data(url, w, h, None)
     }
 
-    fn add_image_data(&mut self, url: String, w: u32, h: u32) -> Result<(), String> {
+    fn add_image_data(&mut self, url: String, w: u32, h: u32, at: Option<(f32, f32)>) -> Result<(), String> {
         if w == 0 || h == 0 { return Err("The picture is empty".into()); }
         let scale = 440.0 / w.max(h) as f32;
         let (width, height) = ((w as f32 * scale).round().max(40.0), (h as f32 * scale).round().max(40.0));
@@ -456,8 +489,9 @@ impl Folio {
             return Err("A slide can have up to 30 extra elements.".into());
         }
         let id = new_id();
+        let (x, y) = at.unwrap_or(((1080.0 - width) / 2.0, (slide_h - height) / 2.0));
         slide.layers.push(Layer {
-            id: id.clone(), kind: "image".into(), x: ((1080.0 - width) / 2.0).round(), y: ((slide_h - height) / 2.0).round(), width, height,
+            id: id.clone(), kind: "image".into(), x: x.clamp(0.0, 1080.0 - width).round(), y: y.clamp(0.0, slide_h - height).round(), width, height,
             src: Some(url), text: None, color: None, font_size: None, extra: Default::default(),
         });
         self.selected_layer = Some(id);
@@ -483,6 +517,7 @@ impl Folio {
         let h = self.project.height();
         let scale = (area.width() / 1080.0).min((area.height() - 24.0) / h);
         let rect = Rect::from_center_size(pos2(area.center().x, area.top() + h * scale / 2.0), vec2(1080.0 * scale, h * scale));
+        self.slide_rect = Some(rect);
         if let Some((texture, ..)) = &self.preview {
             ui.painter().image(texture.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
@@ -832,7 +867,7 @@ impl CanopyApp for Folio {
                 image::DynamicImage::ImageRgba8(rgba).write_to(&mut png, image::ImageFormat::Png).map_err(|e| e.to_string())?;
                 let bytes = png.into_inner();
                 if bytes.len() > 15 * 1024 * 1024 { return Err("Use photos under 15 MB".into()); }
-                self.add_image_data(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)), w, h)
+                self.add_image_data(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)), w, h, None)
             })();
             if let Err(error) = result { self.notice = Some(error); }
         }
@@ -886,30 +921,15 @@ impl CanopyApp for Folio {
     }
 
     fn receive(&mut self, files: Vec<SharedFile>, host: &mut dyn Host) -> Receipt {
-        let mut receipt = Receipt::default();
-        for file in files {
-            let name = file.name.to_lowercase();
-            let taken = if name.ends_with(".folio.json") {
-                storage::load(&file.path).map(|mut project| {
-                    project.extra.remove("folderFileName");
-                    for slide in &mut project.slides {
-                        slide.id = new_id();
-                    }
-                    self.open(project);
-                    self.edited_at = Some(Instant::now());
-                })
-            } else {
-                self.add_image_layer(&file.path)
-            };
-            match taken {
-                Ok(()) => receipt.accepted += 1,
-                Err(_) => receipt.skipped.push(file.name),
-            }
-        }
-        if receipt.accepted > 0 {
-            host.toast(format!("Folio took {} file(s)", receipt.accepted));
-        }
-        receipt
+        self.receive_files(files, None, host)
+    }
+
+    fn receive_at(&mut self, files: Vec<SharedFile>, position: egui::Pos2, host: &mut dyn Host) -> Receipt {
+        let at = self.slide_rect.filter(|rect| rect.contains(position)).map(|rect| {
+            ((position.x - rect.left()) * 1080.0 / rect.width(),
+             (position.y - rect.top()) * self.project.height() / rect.height())
+        });
+        self.receive_files(files, at, host)
     }
 
     fn open_document(&mut self, id: &str, host: &mut dyn Host) {
@@ -931,6 +951,32 @@ impl CanopyApp for Folio {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn received_image_uses_slide_coordinates_and_can_be_saved() {
+        use canopy_ui::{CanopyApp, Host, Place, SharedFile, SpaceInfo};
+        struct TestHost;
+        impl Host for TestHost {
+            fn toast(&mut self, _: String) {}
+            fn exported(&mut self, _: std::path::PathBuf) {}
+        }
+        let root = std::env::temp_dir().join(format!("folio-drop-{}", super::new_id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let place = Place { space: Some(SpaceInfo { id: "test".into(), name: "test".into(), dir: root.clone() }), projects_dir: root.clone(), data_dir: root.clone(), exports_dir: root.clone() };
+        let file = root.join("image.png");
+        image::RgbaImage::from_pixel(100, 100, image::Rgba([255, 0, 0, 255])).save(&file).unwrap();
+        let mut app = super::Folio::new(place);
+        app.slide_rect = Some(egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(540.0, 675.0)));
+        let receipt = app.receive_at(vec![SharedFile::new(&file)], egui::pos2(250.0, 250.0), &mut TestHost);
+        assert_eq!(receipt.accepted, 1);
+        let layer = app.project.slides[0].layers.last().unwrap();
+        assert_eq!((layer.x, layer.y), (300.0, 400.0));
+        assert_eq!(app.undo.len(), 1);
+        assert!(app.edited_at.is_some());
+        app.save().unwrap();
+        assert!(super::storage::list(&app.place).len() > 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn ids_name_files_apart() {
         let ids: Vec<String> = (0..1000).map(|_| super::new_id()).collect();
