@@ -253,27 +253,54 @@ impl Folio {
         if ui.button("+ Add text").on_hover_text("A movable caption on this slide").clicked() {
             let dark = self.project.theme == "dark";
             let y = if self.project.format == "square" { 410.0 } else { 520.0 };
+            let id = new_id();
+            if self.slide().layers.len() >= 30 {
+                self.notice = Some("A slide can have up to 30 extra elements.".into());
+                return;
+            }
             self.slide().layers.push(Layer {
-                id: new_id(), kind: "text".into(), x: 140.0, y, width: 650.0, height: 180.0, src: None, text: Some("Your text here".into()),
+                id: id.clone(), kind: "text".into(), x: 140.0, y, width: 650.0, height: 180.0, src: None, text: Some("Your text here".into()),
                 color: Some(if dark { "#f9dec9" } else { "#20211f" }.into()), font_size: Some(64.0), extra: Default::default(),
             });
+            self.selected_layer = Some(id);
         }
-        let slide = self.slide();
-        let mut remove = None;
-        for (i, layer) in slide.layers.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                if let Some(text) = &mut layer.text {
-                    ui.add(egui::TextEdit::singleline(text).desired_width(150.0));
-                } else {
-                    ui.label("Picture");
-                }
-                if ui.small_button("✕").on_hover_text("Remove").clicked() {
-                    remove = Some(i);
-                }
+        ui.separator();
+        ui.label("Elements (front to back)");
+        let slide_index = self.selected.min(self.project.slides.len() - 1);
+        for layer in self.project.slides[slide_index].layers.iter().rev() {
+            let name = layer.text.as_deref().filter(|s| !s.is_empty()).unwrap_or("Picture");
+            let label: String = name.chars().take(28).collect();
+            if ui.selectable_label(self.selected_layer.as_deref() == Some(&layer.id), label).clicked() {
+                self.selected_layer = Some(layer.id.clone());
+            }
+        }
+        let selected = self.selected_layer.as_deref().and_then(|id| self.project.slides[slide_index].layers.iter().position(|layer| layer.id == id));
+        if let Some(index) = selected {
+            let layers = &mut self.project.slides[slide_index].layers;
+            let mut remove = false;
+            ui.horizontal_wrapped(|ui| {
+                if ui.add_enabled(index > 0, egui::Button::new("Send backward")).clicked() { layers.swap(index, index - 1); }
+                if ui.add_enabled(index + 1 < layers.len(), egui::Button::new("Bring forward")).clicked() { layers.swap(index, index + 1); }
+                if ui.button("Remove").clicked() { remove = true; }
             });
-        }
-        if let Some(i) = remove {
-            slide.layers.remove(i);
+            let index = layers.iter().position(|layer| Some(&layer.id) == self.selected_layer.as_ref()).unwrap();
+            if remove {
+                layers.remove(index);
+                self.selected_layer = None;
+            } else if layers[index].kind == "text" {
+                let layer = &mut layers[index];
+                ui.label("Text");
+                ui.add(egui::TextEdit::multiline(layer.text.get_or_insert_default()).desired_width(f32::INFINITY).char_limit(500));
+                ui.add(egui::Slider::new(layer.font_size.get_or_insert(64.0), 24.0..=180.0).step_by(1.0).text("Size"));
+                let color = layer.color.get_or_insert_with(|| "#20211f".into());
+                let mut rgb = [1, 3, 5].map(|i| u8::from_str_radix(color.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0));
+                ui.horizontal(|ui| {
+                    ui.label("Color");
+                    if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
+                        *color = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
+                    }
+                });
+            }
         }
         ui.separator();
         ui.label(egui::RichText::new("Brand kit").font(font::bold(14.0)).color(color::INK));
@@ -317,10 +344,12 @@ impl Folio {
         if slide.layers.len() >= 30 {
             return Err("A slide can have up to 30 extra elements.".into());
         }
+        let id = new_id();
         slide.layers.push(Layer {
-            id: new_id(), kind: "image".into(), x: ((1080.0 - width) / 2.0).round(), y: ((slide_h - height) / 2.0).round(), width, height,
+            id: id.clone(), kind: "image".into(), x: ((1080.0 - width) / 2.0).round(), y: ((slide_h - height) / 2.0).round(), width, height,
             src: Some(url), text: None, color: None, font_size: None, extra: Default::default(),
         });
+        self.selected_layer = Some(id);
         Ok(())
     }
 
