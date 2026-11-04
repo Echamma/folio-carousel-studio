@@ -23,12 +23,15 @@ fn files(family: &str) -> (&'static str, &'static str) {
 
 /// A font file's bytes, read once and kept for the life of the program.
 fn data(name: &str) -> Option<&'static [u8]> {
-    static CACHE: OnceLock<std::sync::Mutex<HashMap<String, Option<&'static [u8]>>>> = OnceLock::new();
+    static CACHE: OnceLock<std::sync::Mutex<HashMap<String, Option<&'static [u8]>>>> =
+        OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     let mut cache = cache.lock().unwrap();
     *cache.entry(name.to_owned()).or_insert_with(|| {
         let path = std::path::Path::new(r"C:\Windows\Fonts").join(name);
-        std::fs::read(path).ok().map(|bytes| &*Box::leak(bytes.into_boxed_slice()))
+        std::fs::read(path)
+            .ok()
+            .map(|bytes| &*Box::leak(bytes.into_boxed_slice()))
     })
 }
 
@@ -41,8 +44,17 @@ impl Faces {
     pub fn new(family: &str, weight: u16) -> Self {
         let bold = weight >= 600;
         let (regular, heavy) = files(family);
-        let names = [if bold { heavy } else { regular }, "seguisym.ttf", if bold { "segoeuib.ttf" } else { "segoeui.ttf" }];
-        Self { faces: names.iter().filter_map(|name| data(name).and_then(|bytes| Face::from_slice(bytes, 0))).collect() }
+        let names = [
+            if bold { heavy } else { regular },
+            "seguisym.ttf",
+            if bold { "segoeuib.ttf" } else { "segoeui.ttf" },
+        ];
+        Self {
+            faces: names
+                .iter()
+                .filter_map(|name| data(name).and_then(|bytes| Face::from_slice(bytes, 0)))
+                .collect(),
+        }
     }
 
     /// Where the top of the em box is above the baseline, per pixel of font size: the first face's typographic
@@ -57,7 +69,10 @@ impl Faces {
     }
 
     fn face_for(&self, c: char) -> usize {
-        self.faces.iter().position(|face| face.glyph_index(c).is_some()).unwrap_or(0)
+        self.faces
+            .iter()
+            .position(|face| face.glyph_index(c).is_some())
+            .unwrap_or(0)
     }
 
     /// One line laid out left to right at `size` px: each glyph's face, id, x and y offset, and the line's width.
@@ -68,7 +83,9 @@ impl Faces {
             return (glyphs, 0.0);
         }
         let bidi = BidiInfo::new(line, Some(if rtl { Level::rtl() } else { Level::ltr() }));
-        let Some(paragraph) = bidi.paragraphs.first() else { return (glyphs, 0.0) };
+        let Some(paragraph) = bidi.paragraphs.first() else {
+            return (glyphs, 0.0);
+        };
         let (levels, runs) = bidi.visual_runs(paragraph, paragraph.range.clone());
         for run in runs {
             let right_to_left = levels[run.start].is_rtl();
@@ -90,11 +107,20 @@ impl Faces {
                 let scale = size / face.units_per_em() as f32;
                 let mut buffer = UnicodeBuffer::new();
                 buffer.push_str(&line[range]);
-                buffer.set_direction(if right_to_left { Direction::RightToLeft } else { Direction::LeftToRight });
+                buffer.set_direction(if right_to_left {
+                    Direction::RightToLeft
+                } else {
+                    Direction::LeftToRight
+                });
                 buffer.guess_segment_properties();
                 let shaped = rustybuzz::shape(face, &[], buffer);
                 for (info, position) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
-                    glyphs.push((face_index, GlyphId(info.glyph_id as u16), pen + position.x_offset as f32 * scale, position.y_offset as f32 * scale));
+                    glyphs.push((
+                        face_index,
+                        GlyphId(info.glyph_id as u16),
+                        pen + position.x_offset as f32 * scale,
+                        position.y_offset as f32 * scale,
+                    ));
                     pen += position.x_advance as f32 * scale;
                 }
             }
@@ -108,7 +134,18 @@ impl Faces {
 
     /// Draws one line with the top of its em box at `y`, starting at `x`, or ending there when `align` is
     /// [`Align::Right`], or centered on it.
-    pub fn draw(&self, canvas: &mut Pixmap, clip: Option<&Mask>, line: &str, x: f32, y: f32, size: f32, rtl: bool, align: Align, color: tiny_skia::Color) {
+    pub fn draw(
+        &self,
+        canvas: &mut Pixmap,
+        clip: Option<&Mask>,
+        line: &str,
+        x: f32,
+        y: f32,
+        size: f32,
+        rtl: bool,
+        align: Align,
+        color: tiny_skia::Color,
+    ) {
         let (glyphs, width) = self.shape(line, size, rtl);
         let left = match align {
             Align::Left => x,
@@ -120,14 +157,25 @@ impl Faces {
         for (face_index, glyph, gx, gy) in glyphs {
             let face = &self.faces[face_index];
             let scale = size / face.units_per_em() as f32;
-            let mut pen = Pen { path: &mut path, x: left + gx, y: baseline - gy, scale };
+            let mut pen = Pen {
+                path: &mut path,
+                x: left + gx,
+                y: baseline - gy,
+                scale,
+            };
             face.outline_glyph(glyph, &mut pen);
         }
         let Some(path) = path.finish() else { return };
         let mut paint = Paint::default();
         paint.set_color(color);
         paint.anti_alias = true;
-        canvas.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), clip);
+        canvas.fill_path(
+            &path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            clip,
+        );
     }
 }
 
@@ -208,7 +256,9 @@ pub fn wrap(value: &str, width: f32, measure: &dyn Fn(&str) -> f32) -> Vec<Strin
 
 /// Whether text has right-to-left letters (Hebrew, Arabic and the scripts between), as Folio checks it.
 pub fn has_rtl(value: &str) -> bool {
-    value.chars().any(|c| ('\u{0590}'..='\u{08ff}').contains(&c))
+    value
+        .chars()
+        .any(|c| ('\u{0590}'..='\u{08ff}').contains(&c))
 }
 
 #[cfg(test)]
@@ -218,8 +268,14 @@ mod tests {
     #[test]
     fn words_wrap_and_long_words_break() {
         let measure = |s: &str| s.chars().count() as f32 * 10.0;
-        assert_eq!(wrap("one two three", 75.0, &measure), vec!["one two", "three"]);
-        assert_eq!(wrap("abcdefghij", 40.0, &measure), vec!["abcd", "efgh", "ij"]);
+        assert_eq!(
+            wrap("one two three", 75.0, &measure),
+            vec!["one two", "three"]
+        );
+        assert_eq!(
+            wrap("abcdefghij", 40.0, &measure),
+            vec!["abcd", "efgh", "ij"]
+        );
         assert_eq!(wrap("a\n\nb", 100.0, &measure), vec!["a", "", "b"]);
     }
 
@@ -227,8 +283,14 @@ mod tests {
     fn arabic_is_joined_and_measured() {
         let faces = Faces::new("Arial", 400);
         let joined = faces.measure("سلام", 40.0, true);
-        let apart: f32 = "سلام".chars().map(|c| faces.measure(&c.to_string(), 40.0, true)).sum();
-        assert!(joined > 10.0 && (joined - apart).abs() > 1.0, "joined letters take other forms: {joined} vs {apart}");
+        let apart: f32 = "سلام"
+            .chars()
+            .map(|c| faces.measure(&c.to_string(), 40.0, true))
+            .sum();
+        assert!(
+            joined > 10.0 && (joined - apart).abs() > 1.0,
+            "joined letters take other forms: {joined} vs {apart}"
+        );
         assert!(has_rtl("Hello سلام") && !has_rtl("Hello"));
     }
 }

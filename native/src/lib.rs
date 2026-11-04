@@ -23,7 +23,9 @@ pub static DESCRIPTOR: AppDescriptor = AppDescriptor {
     icon_png: &[],
     accepts: |file: &SharedFile| {
         let name = file.name.to_lowercase();
-        [".folio.json", ".png", ".jpg", ".jpeg", ".webp"].iter().any(|ext| name.ends_with(ext))
+        [".folio.json", ".png", ".jpg", ".jpeg", ".webp"]
+            .iter()
+            .any(|ext| name.ends_with(ext))
     },
     documents: storage::list,
     create,
