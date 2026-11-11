@@ -1,7 +1,7 @@
 //! Slides drawn the way Electron Folio's canvas draws them (`renderer.js`): the same layouts, sizes, colors and
 //! text fitting, at full size (1080 wide, 1080 or 1350 tall). Exports and the editor's preview both use it.
 
-use crate::model::{Project, Slide};
+use crate::model::{Layer, Project, Slide};
 use crate::text::{Align, Faces, has_rtl, wrap};
 use base64::Engine;
 use std::collections::HashMap;
@@ -81,6 +81,8 @@ struct Canvas {
     clip: Option<Mask>,
     rtl: bool,
     reduced: bool,
+    /// How the next text is lined up in its box, when an element says (otherwise by direction).
+    align: Option<Align>,
 }
 
 impl Canvas {
@@ -188,10 +190,12 @@ impl Canvas {
         let visible = &lines[..lines.len().min(fit)];
         for (i, line) in visible.iter().enumerate() {
             let line_y = y + i as f32 * actual * 1.18;
-            let (at, align) = if right {
-                (x + width, Align::Right)
-            } else {
-                (x, Align::Left)
+            let (at, align) = match self.align {
+                Some(Align::Center) => (x + width / 2.0, Align::Center),
+                Some(Align::Right) => (x + width, Align::Right),
+                Some(Align::Left) => (x, Align::Left),
+                None if right => (x + width, Align::Right),
+                None => (x, Align::Left),
             };
             faces.draw(
                 &mut self.pixmap,
@@ -325,63 +329,113 @@ pub fn slide(project: &Project, index: usize, pictures: &mut Pictures) -> (Pixma
         clip: None,
         rtl: project.direction.as_deref() == Some("rtl"),
         reduced: false,
+        align: None,
     };
     if slide.layout == "navy-ribbon" {
         navy(&mut canvas, slide, project, index, h);
+    } else if slide.layout == "blank" {
+        // Nothing but its background: everything on it is an element.
+        let theme = if project.theme == "dark" { DARK.bg } else { LIGHT.bg };
+        canvas.rect(0.0, 0.0, 1080.0, h, slide.background.as_deref().unwrap_or(theme));
     } else {
         base(&mut canvas, slide, project, index, h, pictures);
     }
-    // Movable elements, each clipped to its box.
     for layer in &slide.layers {
-        canvas.clip_to(
-            Rect::from_xywh(layer.x, layer.y, layer.width, layer.height)
-                .map(PathBuilder::from_rect),
-        );
-        match layer.kind.as_str() {
-            "image" => {
-                if let Some(image) = layer.src.as_deref().and_then(|src| pictures.get(src)) {
-                    let transform = Transform::from_scale(
-                        layer.width / image.width() as f32,
-                        layer.height / image.height() as f32,
-                    )
-                    .post_translate(layer.x, layer.y);
-                    let paint = PixmapPaint {
-                        quality: tiny_skia::FilterQuality::Bicubic,
-                        ..PixmapPaint::default()
-                    };
-                    canvas.pixmap.draw_pixmap(
-                        0,
-                        0,
-                        image.as_ref(),
-                        &paint,
-                        transform,
-                        canvas.clip.as_ref(),
-                    );
-                }
-            }
-            "text" => {
-                let (text, fill, size) = (
-                    layer.text.as_deref().unwrap_or(""),
-                    layer.color.as_deref().unwrap_or("#000000"),
-                    layer.font_size.unwrap_or(64.0),
-                );
-                canvas.text(
-                    text,
-                    layer.x,
-                    layer.y,
-                    layer.width,
-                    size,
-                    fill,
-                    &project.font,
-                    700,
-                    layer.height,
-                );
-            }
-            _ => {}
-        }
-        canvas.unclip();
+        draw_layer(&mut canvas, layer, project, pictures);
     }
     (canvas.pixmap, canvas.reduced)
+}
+
+/// A star's ten points inside a box, its top point up.
+fn star(x: f32, y: f32, w: f32, h: f32) -> Option<tiny_skia::Path> {
+    let mut path = PathBuilder::new();
+    for i in 0..10 {
+        let angle = -PI / 2.0 + i as f32 * PI / 5.0;
+        let reach = if i % 2 == 0 { 1.0 } else { 0.42 };
+        let (px, py) = (x + w / 2.0 + angle.cos() * reach * w / 2.0, y + h / 2.0 + angle.sin() * reach * h / 2.0);
+        if i == 0 { path.move_to(px, py) } else { path.line_to(px, py) }
+    }
+    path.close();
+    path.finish()
+}
+
+/// A movable element: a picture stretched to its box, text wrapped in it, or a shape filling it; turned around its
+/// middle and faded as it says.
+fn draw_layer(canvas: &mut Canvas, layer: &Layer, project: &Project, pictures: &mut Pictures) {
+    let (x, y, w, h) = (layer.x, layer.y, layer.width, layer.height);
+    let (opacity, rotation) = (layer.opacity(), layer.rotation());
+    if opacity <= 0.0 || w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let (cx, cy) = layer.center();
+    let turn = if rotation == 0.0 { Transform::identity() } else { Transform::from_rotate_at(rotation, cx, cy) };
+    let radius = layer.radius.unwrap_or(0.0).max(0.0);
+    match layer.kind.as_str() {
+        "image" => {
+            let Some(image) = layer.src.as_deref().and_then(|src| pictures.get(src)) else { return };
+            let Some(mut mask) = Mask::new(canvas.pixmap.width(), canvas.pixmap.height()) else { return };
+            if let Some(path) = rounded_rect(x, y, w, h, radius) {
+                mask.fill_path(&path, FillRule::Winding, true, turn);
+            }
+            let transform = Transform::from_scale(w / image.width() as f32, h / image.height() as f32).post_translate(x, y).post_concat(turn);
+            let paint = PixmapPaint { opacity, quality: tiny_skia::FilterQuality::Bicubic, ..PixmapPaint::default() };
+            canvas.pixmap.draw_pixmap(0, 0, image.as_ref(), &paint, transform, Some(&mask));
+        }
+        "text" => {
+            let (text, fill, size) = (layer.text.as_deref().unwrap_or(""), layer.color.as_deref().unwrap_or("#000000"), layer.font_size.unwrap_or(64.0));
+            let font = layer.font.as_deref().unwrap_or(&project.font);
+            let weight = if layer.bold == Some(false) { 400 } else { 700 };
+            let align = match layer.align.as_deref() {
+                Some("center") => Some(Align::Center),
+                Some("right") => Some(Align::Right),
+                Some("left") => Some(Align::Left),
+                _ => None,
+            };
+            if rotation == 0.0 && opacity >= 1.0 {
+                canvas.clip_to(Rect::from_xywh(x, y, w, h).map(PathBuilder::from_rect));
+                canvas.align = align;
+                canvas.text(text, x, y, w, size, fill, font, weight, h);
+                canvas.align = None;
+                canvas.unclip();
+            } else if let Some(pixmap) = Pixmap::new(w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32) {
+                // Drawn on its own, then laid on the slide turned and faded.
+                let mut own = Canvas { pixmap, clip: None, rtl: canvas.rtl, reduced: false, align };
+                own.text(text, 0.0, 0.0, w, size, fill, font, weight, h);
+                canvas.reduced |= own.reduced;
+                let paint = PixmapPaint { opacity, quality: tiny_skia::FilterQuality::Bicubic, ..PixmapPaint::default() };
+                canvas.pixmap.draw_pixmap(0, 0, own.pixmap.as_ref(), &paint, Transform::from_translate(x, y).post_concat(turn), None);
+            }
+        }
+        "shape" => {
+            let path = match layer.shape.as_deref() {
+                Some("ellipse") => Rect::from_xywh(x, y, w, h).and_then(PathBuilder::from_oval),
+                Some("triangle") => {
+                    let mut path = PathBuilder::new();
+                    path.move_to(x + w / 2.0, y);
+                    path.line_to(x + w, y + h);
+                    path.line_to(x, y + h);
+                    path.close();
+                    path.finish()
+                }
+                Some("star") => star(x, y, w, h),
+                _ => rounded_rect(x, y, w, h, radius),
+            };
+            let Some(path) = path else { return };
+            let paint = |hex: &str| {
+                let mut tint = color(hex);
+                tint.set_alpha(tint.alpha() * opacity);
+                let mut paint = Paint::default();
+                paint.set_color(tint);
+                paint.anti_alias = true;
+                paint
+            };
+            canvas.pixmap.fill_path(&path, &paint(layer.color.as_deref().unwrap_or("#000000")), FillRule::Winding, turn, None);
+            if let (Some(stroke), Some(width)) = (layer.stroke.as_deref(), layer.stroke_width.filter(|w| *w > 0.0)) {
+                canvas.pixmap.stroke_path(&path, &paint(stroke), &Stroke { width, ..Stroke::default() }, turn, None);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn base(
@@ -983,6 +1037,44 @@ pub fn png(project: &Project, index: usize, pictures: &mut Pictures) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elements_are_drawn_turned_faded_and_over_the_edge() {
+        use crate::model::Layer;
+        let mut n = 0;
+        let mut ids = || {
+            n += 1;
+            format!("id-{n}")
+        };
+        let mut project = Project::starter(&mut ids);
+        project.slides.truncate(1);
+        project.slides[0].layout = "blank".into();
+        project.slides[0].background = Some("#000000".into());
+        let shape = |x: f32, y: f32, w: f32, h: f32| Layer { kind: "shape".into(), shape: Some("rect".into()), x, y, width: w, height: h, color: Some("#ffffff".into()), ..Layer::default() };
+        project.slides[0].layers = vec![
+            // A white bar, a quarter turn: it becomes tall and narrow around the same middle.
+            Layer { rotation: Some(90.0), ..shape(400.0, 500.0, 200.0, 40.0) },
+            // Half-faded white over black is mid gray.
+            Layer { opacity: Some(0.5), ..shape(100.0, 100.0, 100.0, 100.0) },
+            // Hanging off the corner: only the part on the slide shows.
+            Layer { shape: Some("ellipse".into()), ..shape(980.0, -100.0, 200.0, 200.0) },
+            Layer { kind: "text".into(), text: Some("Hi".into()), font_size: Some(120.0), rotation: Some(30.0), align: Some("center".into()), ..shape(300.0, 900.0, 400.0, 200.0) },
+        ];
+        assert_eq!(project.validate(), Ok(()));
+        let pixmap = slide(&project, 0, &mut Pictures::default()).0;
+        let at = |x: u32, y: u32| {
+            let p = pixmap.pixel(x, y).unwrap();
+            (p.red(), p.green(), p.blue())
+        };
+        assert_eq!(at(500, 430), (255, 255, 255), "the turned bar reaches above where it lay");
+        assert_eq!(at(420, 520), (0, 0, 0), "and no longer covers its old left end");
+        let gray = at(150, 150).0;
+        assert!((126..=129).contains(&gray), "{gray}");
+        assert_eq!(at(1070, 10), (255, 255, 255));
+        assert_eq!(at(900, 10), (0, 0, 0));
+        // The turned text put some white somewhere inside its box.
+        assert!((900..1100).any(|y| (300..700).any(|x| at(x, y).0 > 200)));
+    }
 
     #[test]
     fn ribbon_noise_matches_javascript() {

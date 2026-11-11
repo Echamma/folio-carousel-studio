@@ -17,6 +17,12 @@ fn files(family: &str) -> (&'static str, &'static str) {
         "Georgia" => ("georgia.ttf", "georgiab.ttf"),
         "Verdana" => ("verdana.ttf", "verdanab.ttf"),
         "Trebuchet MS" => ("trebuc.ttf", "trebucbd.ttf"),
+        "Segoe UI" => ("segoeui.ttf", "segoeuib.ttf"),
+        "Calibri" => ("calibri.ttf", "calibrib.ttf"),
+        "Times New Roman" => ("times.ttf", "timesbd.ttf"),
+        "Courier New" => ("cour.ttf", "courbd.ttf"),
+        "Impact" => ("impact.ttf", "impact.ttf"),
+        "Comic Sans MS" => ("comic.ttf", "comicbd.ttf"),
         _ => ("arial.ttf", "arialbd.ttf"),
     }
 }

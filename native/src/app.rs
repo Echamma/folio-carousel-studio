@@ -1,7 +1,10 @@
 //! Native Folio editor: slides, their copy and pictures, the brand kit, and exports, on the same `.folio.json`
 //! files as Electron Folio. Slides are drawn by `render`, the same code exports use.
 
-use crate::model::{FONTS, LAYOUTS, Layer, Project, Slide};
+mod canvas;
+
+use crate::designs;
+use crate::model::{FONTS, LAYOUTS, Layer, MAX_LAYERS, Project, Slide};
 use crate::render::{self, Pictures};
 use crate::samples;
 use crate::storage;
@@ -127,10 +130,15 @@ pub struct Folio {
     edited_at: Option<Instant>,
     show_projects: bool,
     notice: Option<String>,
-    /// The element chosen on the slide, and one being dragged: its id, whether by its resize corner, and where it
-    /// was (x, y, width, height).
-    selected_layer: Option<String>,
-    element_drag: Option<(String, bool, (f32, f32, f32, f32))>,
+    /// The elements picked on the slide (by id), the drag in progress, and the guides it is snapping to.
+    picked: Vec<String>,
+    drag: Option<canvas::Drag>,
+    guides: Vec<canvas::Guide>,
+    /// Elements copied with Ctrl+C, and whether the text box of the picked one should take the keyboard.
+    clipboard: Vec<Layer>,
+    focus_text: bool,
+    /// The slide list's pictures: each with the slide and the look it was drawn from.
+    thumbs: Vec<Option<(Slide, String, TextureHandle)>>,
     /// The project gallery's search, and project covers by file name (with the time they were saved).
     search: String,
     covers: std::collections::HashMap<String, (u64, TextureHandle)>,
@@ -168,8 +176,12 @@ impl Folio {
             edited_at: None,
             show_projects: false,
             notice: None,
-            selected_layer: None,
-            element_drag: None,
+            picked: Vec::new(),
+            drag: None,
+            guides: Vec::new(),
+            clipboard: Vec::new(),
+            focus_text: false,
+            thumbs: Vec::new(),
             search: String::new(),
             covers: Default::default(),
             show_layouts: false,
@@ -186,7 +198,8 @@ impl Folio {
         self.save()
             .map_err(|error| format!("Couldn't save the current project: {error}"))?;
         (self.project, self.selected, self.preview) = (project, 0, None);
-        self.selected_layer = None;
+        self.picked.clear();
+        self.thumbs.clear();
         self.undo.clear();
         self.redo.clear();
         Ok(())
@@ -265,7 +278,16 @@ impl Folio {
                 {
                     Some(samples::navy(&mut new_id))
                 } else {
-                    None
+                    // A design of your own: one empty slide, in the size you pick.
+                    ui.separator();
+                    [("Blank portrait (1080 × 1350)", "portrait"), ("Blank square (1080 × 1080)", "square"), ("Blank story (1080 × 1920)", "story")]
+                        .into_iter()
+                        .find(|(label, _)| ui.button(*label).clicked())
+                        .map(|(_, format)| {
+                            let mut project = Project { name: "Untitled design".into(), format: format.into(), ..Project::starter(&mut new_id) };
+                            project.slides = vec![designs::slide("empty", &project, &mut new_id)];
+                            project
+                        })
                 };
                 if let Some(project) = start {
                     match self.open(project) {
@@ -354,6 +376,18 @@ impl Folio {
                 }
             });
             if ui
+                .button("Copy slide")
+                .on_hover_text("This slide as a picture on the clipboard, to paste anywhere")
+                .clicked()
+            {
+                let pixmap = render::slide(&self.project, self.selected.min(self.project.slides.len() - 1), &mut self.pictures).0;
+                let picture = arboard::ImageData { width: pixmap.width() as usize, height: pixmap.height() as usize, bytes: pixmap.data().into() };
+                host.toast(match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_image(picture)) {
+                    Ok(()) => "Slide copied".into(),
+                    Err(error) => format!("Couldn't copy the slide: {error}"),
+                });
+            }
+            if ui
                 .button("Export slide")
                 .on_hover_text("This slide as a PNG, into Files")
                 .clicked()
@@ -425,6 +459,20 @@ impl Folio {
                 .color(color::INK),
         );
         let count = self.project.slides.len();
+        // Each slide's picture, redrawn one a frame once the slide (or the look they all share) has changed and
+        // the pointer is up.
+        let p = &self.project;
+        let look = format!("{}|{}|{}|{}|{}|{}|{:?}|{count}", p.format, p.theme, p.accent, p.font, p.brand, p.handle, p.direction);
+        self.thumbs.resize_with(count, || None);
+        if !ui.input(|i| i.pointer.any_down()) {
+            let stale = (0..count).find(|&i| self.thumbs[i].as_ref().is_none_or(|(slide, drawn, _)| slide != &self.project.slides[i] || drawn != &look));
+            if let Some(i) = stale {
+                let texture = Self::thumbnail(ui.ctx(), format!("folio-thumb-{i}"), &self.project, i, &mut self.pictures, 264);
+                self.thumbs[i] = Some((self.project.slides[i].clone(), look.clone(), texture));
+                ui.ctx().request_repaint();
+            }
+        }
+        let size = vec2(132.0, 132.0 * self.project.height() / 1080.0);
         egui::ScrollArea::vertical()
             .id_salt("folio-slides")
             .max_height(ui.available_height() - 120.0)
@@ -434,28 +482,39 @@ impl Folio {
                         .iter()
                         .find(|l| l.0 == self.project.slides[i].layout)
                         .map_or("", |l| l.1);
-                    let first_line = self.project.slides[i]
-                        .title
-                        .lines()
-                        .next()
-                        .unwrap_or("")
-                        .chars()
-                        .take(22)
-                        .collect::<String>();
-                    if ui
-                        .selectable_label(
-                            i == self.selected,
-                            format!("{:02}  {layout}\n     {first_line}", i + 1),
-                        )
-                        .clicked()
-                    {
-                        self.selected = i;
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("{:02}", i + 1)).font(font::ui(12.0)).color(if i == self.selected { color::INK } else { color::INK_MUTED }));
+                        let button = match &self.thumbs[i] {
+                            Some((_, _, texture)) => ui.add(egui::Button::image(egui::Image::new(texture).fit_to_exact_size(size)).selected(i == self.selected)),
+                            None => ui.add_sized(size, egui::Button::new("…").selected(i == self.selected)),
+                        };
+                        if button.on_hover_text(layout).clicked() {
+                            self.selected = i;
+                            self.picked.clear();
+                        }
+                    });
                 }
             });
         ui.separator();
         ui.menu_button("+ Add slide", |ui| {
-            for (id, name, icon, description) in LAYOUTS {
+            // Designs are blank slides with a few elements to start from; layouts fill themselves in from the copy.
+            ui.label(egui::RichText::new("Designs").font(font::ui(12.0)).color(color::INK_MUTED));
+            for (id, name, description) in designs::DESIGNS {
+                if ui.button(name).on_hover_text(description).clicked() {
+                    if count < 20 {
+                        let slide = designs::slide(id, &self.project, &mut new_id);
+                        self.project.slides.insert(self.selected + 1, slide);
+                        self.selected += 1;
+                        self.picked.clear();
+                    } else {
+                        self.notice = Some("A carousel can have up to 20 slides".into());
+                    }
+                    ui.close();
+                }
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("Layouts").font(font::ui(12.0)).color(color::INK_MUTED));
+            for (id, name, icon, description) in LAYOUTS.into_iter().filter(|l| l.0 != "blank") {
                 if ui
                     .button(format!("{icon}  {name}"))
                     .on_hover_text(description)
@@ -556,6 +615,11 @@ impl Folio {
                 );
             }
         });
+        if self.slide().layout == "blank" {
+            ui.label(egui::RichText::new("A blank slide shows only its background and the elements you add.").font(font::ui(12.0)).color(color::INK_MUTED));
+        }
+        // A blank slide has no copy of its own to fill in: its words are elements.
+        if self.slide().layout != "blank" {
         let slide = self.slide();
         ui.label("Eyebrow");
         ui.add(egui::TextEdit::singleline(&mut slide.eyebrow).desired_width(f32::INFINITY));
@@ -629,125 +693,20 @@ impl Folio {
                 }
             });
         }
-        if ui
-            .button("+ Add image…")
-            .on_hover_text("A movable picture on this slide")
-            .clicked()
-        {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Pictures", &["png", "jpg", "jpeg", "webp"])
-                .pick_file()
-            {
-                if let Err(error) = self.add_image_layer(&path) {
-                    self.notice = Some(error);
-                }
-            }
         }
-        if ui
-            .button("+ Add text")
-            .on_hover_text("A movable caption on this slide")
-            .clicked()
-        {
-            let dark = self.project.theme == "dark";
-            let y = if self.project.format == "square" {
-                410.0
-            } else {
-                520.0
-            };
-            let id = new_id();
-            if self.slide().layers.len() >= 30 {
-                self.notice = Some("A slide can have up to 30 extra elements.".into());
-                return;
-            }
-            self.slide().layers.push(Layer {
-                id: id.clone(),
-                kind: "text".into(),
-                x: 140.0,
-                y,
-                width: 650.0,
-                height: 180.0,
-                src: None,
-                text: Some("Your text here".into()),
-                color: Some(if dark { "#f9dec9" } else { "#20211f" }.into()),
-                font_size: Some(64.0),
-                extra: Default::default(),
-            });
-            self.selected_layer = Some(id);
-        }
-        ui.separator();
-        ui.label("Elements (front to back)");
-        let slide_index = self.selected.min(self.project.slides.len() - 1);
-        for layer in self.project.slides[slide_index].layers.iter().rev() {
-            let name = layer
-                .text
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Picture");
-            let label: String = name.chars().take(28).collect();
-            if ui
-                .selectable_label(self.selected_layer.as_deref() == Some(&layer.id), label)
-                .clicked()
-            {
-                self.selected_layer = Some(layer.id.clone());
-            }
-        }
-        let selected = self.selected_layer.as_deref().and_then(|id| {
-            self.project.slides[slide_index]
-                .layers
-                .iter()
-                .position(|layer| layer.id == id)
-        });
-        if let Some(index) = selected {
-            let layers = &mut self.project.slides[slide_index].layers;
-            let mut remove = false;
-            ui.horizontal_wrapped(|ui| {
-                if ui
-                    .add_enabled(index > 0, egui::Button::new("Send backward"))
-                    .clicked()
-                {
-                    layers.swap(index, index - 1);
+        if self.slide().layout == "blank" {
+            let theme = if self.project.theme == "dark" { "#151716" } else { "#fff2ed" };
+            let slide = self.slide();
+            ui.horizontal(|ui| {
+                ui.label("Background");
+                let mut fill = slide.background.clone().unwrap_or_else(|| theme.to_owned());
+                if canvas::color_button(ui, &mut fill) {
+                    slide.background = Some(fill);
                 }
-                if ui
-                    .add_enabled(index + 1 < layers.len(), egui::Button::new("Bring forward"))
-                    .clicked()
-                {
-                    layers.swap(index, index + 1);
-                }
-                if ui.button("Remove").clicked() {
-                    remove = true;
+                if slide.background.is_some() && ui.small_button("Use the theme's").clicked() {
+                    slide.background = None;
                 }
             });
-            let index = layers
-                .iter()
-                .position(|layer| Some(&layer.id) == self.selected_layer.as_ref())
-                .unwrap();
-            if remove {
-                layers.remove(index);
-                self.selected_layer = None;
-            } else if layers[index].kind == "text" {
-                let layer = &mut layers[index];
-                ui.label("Text");
-                ui.add(
-                    egui::TextEdit::multiline(layer.text.get_or_insert_default())
-                        .desired_width(f32::INFINITY)
-                        .char_limit(500),
-                );
-                ui.add(
-                    egui::Slider::new(layer.font_size.get_or_insert(64.0), 24.0..=180.0)
-                        .step_by(1.0)
-                        .text("Size"),
-                );
-                let color = layer.color.get_or_insert_with(|| "#20211f".into());
-                let mut rgb = [1, 3, 5].map(|i| {
-                    u8::from_str_radix(color.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0)
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Color");
-                    if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
-                        *color = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
-                    }
-                });
-            }
         }
         ui.separator();
         ui.label(
@@ -783,12 +742,13 @@ impl Folio {
                     }
                 });
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.selectable_value(&mut project.theme, "light".into(), "Light");
             ui.selectable_value(&mut project.theme, "dark".into(), "Dark");
             ui.separator();
             ui.selectable_value(&mut project.format, "portrait".into(), "Portrait");
             ui.selectable_value(&mut project.format, "square".into(), "Square");
+            ui.selectable_value(&mut project.format, "story".into(), "Story");
         });
         let mut rtl = project.direction.as_deref() == Some("rtl");
         if ui.checkbox(&mut rtl, "Right-to-left (Arabic)").changed() {
@@ -820,8 +780,8 @@ impl Folio {
         );
         let slide_h = self.project.height();
         let slide = self.slide();
-        if slide.layers.len() >= 30 {
-            return Err("A slide can have up to 30 extra elements.".into());
+        if slide.layers.len() >= MAX_LAYERS {
+            return Err(format!("A slide can have up to {MAX_LAYERS} elements."));
         }
         let id = new_id();
         let (x, y) = at.unwrap_or(((1080.0 - width) / 2.0, (slide_h - height) / 2.0));
@@ -833,12 +793,9 @@ impl Folio {
             width,
             height,
             src: Some(url),
-            text: None,
-            color: None,
-            font_size: None,
-            extra: Default::default(),
+            ..Layer::default()
         });
-        self.selected_layer = Some(id);
+        self.picked = vec![id];
         Ok(())
     }
 
@@ -895,131 +852,8 @@ impl Folio {
                 color::INK_MUTED,
             );
         }
-        self.elements(ui, rect, scale);
-    }
-
-    /// Electron's element handles: drag an element to move it, its lower-right corner to resize it (a picture keeps
-    /// its shape; text stretches), kept inside the slide; click to select it, topmost first.
-    fn elements(&mut self, ui: &mut Ui, slide: Rect, scale: f32) {
-        let h = self.project.height();
-        let index = self.selected.min(self.project.slides.len() - 1);
-        let to_screen = |x: f32, y: f32| pos2(slide.left() + x * scale, slide.top() + y * scale);
-        let layers: Vec<(String, Rect)> = self.project.slides[index]
-            .layers
-            .iter()
-            .map(|l| {
-                (
-                    l.id.clone(),
-                    Rect::from_min_max(
-                        to_screen(l.x, l.y),
-                        to_screen(l.x + l.width, l.y + l.height),
-                    ),
-                )
-            })
-            .collect();
-        for (id, rect) in &layers {
-            let selected = self.selected_layer.as_ref() == Some(id);
-            ui.painter().rect_stroke(
-                *rect,
-                2.0,
-                egui::Stroke::new(
-                    if selected { 1.5 } else { 0.8 },
-                    if selected {
-                        color::SUN
-                    } else {
-                        color::INK_MUTED.gamma_multiply(0.6)
-                    },
-                ),
-                egui::StrokeKind::Outside,
-            );
-            if selected {
-                ui.painter().rect_filled(
-                    Rect::from_center_size(rect.max, vec2(10.0, 10.0)),
-                    2.0,
-                    color::SUN,
-                );
-            }
-        }
-        // Topmost (last drawn) wins, as overlapping elements stack.
-        for (id, rect) in layers.iter().rev() {
-            let corner = Rect::from_center_size(rect.max, vec2(16.0, 16.0));
-            let response = ui.interact(
-                rect.union(corner),
-                ui.scope_id().with(("folio-element", id)),
-                egui::Sense::click_and_drag(),
-            );
-            if let Some(p) = response.hover_pos() {
-                ui.ctx().set_cursor_icon(if corner.contains(p) {
-                    egui::CursorIcon::ResizeNwSe
-                } else {
-                    egui::CursorIcon::Grab
-                });
-            }
-            if response.drag_started() || response.clicked() {
-                self.selected_layer = Some(id.clone());
-                let origin = ui
-                    .input(|i| i.pointer.press_origin())
-                    .unwrap_or(rect.center());
-                let layer = self.project.slides[index]
-                    .layers
-                    .iter()
-                    .find(|l| &l.id == id)
-                    .unwrap();
-                self.element_drag = Some((
-                    id.clone(),
-                    corner.contains(origin),
-                    (layer.x, layer.y, layer.width, layer.height),
-                ));
-            }
-            if response.dragged() {
-                let Some((dragged, resizing, (x, y, w, h0))) =
-                    self.element_drag.clone().filter(|d| &d.0 == id)
-                else {
-                    continue;
-                };
-                let delta = response.drag_delta();
-                let total = ui
-                    .input(|i| i.pointer.interact_pos())
-                    .zip(ui.input(|i| i.pointer.press_origin()))
-                    .map(|(now, from)| (now - from) / scale)
-                    .unwrap_or(delta);
-                let Some(layer) = self.project.slides[index]
-                    .layers
-                    .iter_mut()
-                    .find(|l| l.id == dragged)
-                else {
-                    continue;
-                };
-                if resizing {
-                    if layer.kind == "image" {
-                        let factor = 1.0
-                            + if (total.x / w).abs() > (total.y / h0).abs() {
-                                total.x / w
-                            } else {
-                                total.y / h0
-                            };
-                        let bounded = factor.clamp(
-                            (40.0 / w).max(40.0 / h0),
-                            ((1080.0 - x) / w).min((h - y) / h0),
-                        );
-                        (layer.width, layer.height) =
-                            ((w * bounded).round(), (h0 * bounded).round());
-                    } else {
-                        layer.width = (w + total.x).clamp(50.0, 1080.0 - x).round();
-                        layer.height = (h0 + total.y).clamp(40.0, h - y).round();
-                    }
-                } else {
-                    layer.x = (x + total.x).clamp(0.0, 1080.0 - layer.width).round();
-                    layer.y = (y + total.y).clamp(0.0, h - layer.height).round();
-                }
-            }
-            if response.drag_stopped() {
-                self.element_drag = None;
-            }
-            if response.contains_pointer() {
-                break;
-            }
-        }
+        let area = ui.max_rect();
+        self.elements(ui, rect, scale, area);
     }
 
     /// Electron's preview: one slide at a time, large, with arrows (and the arrow keys) to swipe through.
@@ -1441,15 +1275,19 @@ impl Folio {
 impl CanopyApp for Folio {
     fn ui(&mut self, ui: &mut Ui, host: &mut dyn Host) {
         let before = self.project.clone();
-        if host.focused() && !ui.ctx().egui_wants_keyboard_input() && self.preview_index.is_none() {
+        let keys = host.focused() && !ui.ctx().egui_wants_keyboard_input() && self.preview_index.is_none();
+        // With elements picked the arrows nudge them; otherwise they go through the slides, as Page Up and Down
+        // always do.
+        let nudged = keys && self.element_keys(ui);
+        if keys {
             let (undo, redo, left, right) = ui.input(|i| {
                 (
                     i.modifiers.command && i.key_pressed(egui::Key::Z) && !i.modifiers.shift,
                     i.modifiers.command
                         && (i.key_pressed(egui::Key::Y)
                             || (i.modifiers.shift && i.key_pressed(egui::Key::Z))),
-                    i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::ArrowUp),
-                    i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::ArrowDown),
+                    i.key_pressed(egui::Key::PageUp) || (!nudged && (i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::ArrowUp))),
+                    i.key_pressed(egui::Key::PageDown) || (!nudged && (i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::ArrowDown))),
                 )
             });
             if undo {
@@ -1462,11 +1300,13 @@ impl CanopyApp for Folio {
                     self.undo.push(std::mem::replace(&mut self.project, next));
                 }
             }
-            if left {
-                self.selected = self.selected.saturating_sub(1);
+            if left && self.selected > 0 {
+                self.selected -= 1;
+                self.picked.clear();
             }
-            if right {
-                self.selected = (self.selected + 1).min(self.project.slides.len() - 1);
+            if right && self.selected + 1 < self.project.slides.len() {
+                self.selected += 1;
+                self.picked.clear();
             }
         }
         // egui delivers clipboard images as a paste event; text fields retain normal text paste.
@@ -1537,6 +1377,9 @@ impl CanopyApp for Folio {
             if let Err(error) = result {
                 self.notice = Some(error);
             }
+        } else if keys && ui.input(|i| i.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))) {
+            // No picture on the clipboard: Ctrl+V pastes the elements copied here.
+            self.paste_layers();
         }
         if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             if let Err(error) = self.save() {
@@ -1551,7 +1394,7 @@ impl CanopyApp for Folio {
         );
         let body = Rect::from_min_max(pos2(rect.left(), top.bottom() + 4.0), rect.max);
         let left = Rect::from_min_size(body.min, vec2(200.0, body.height()));
-        let right = Rect::from_min_max(pos2(body.right() - 280.0, body.top()), body.max);
+        let right = Rect::from_min_max(pos2(body.right() - 300.0, body.top()), body.max);
         let middle = Rect::from_min_max(
             pos2(left.right() + 6.0, body.top()),
             pos2(right.left() - 6.0, body.bottom()),
@@ -1566,7 +1409,13 @@ impl CanopyApp for Folio {
         ui.scope_builder(UiBuilder::new().max_rect(right.shrink(8.0)), |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("folio-details")
-                .show(ui, |ui| self.details(ui));
+                .show(ui, |ui| {
+                    self.add_bar(ui);
+                    ui.separator();
+                    self.inspector(ui);
+                    ui.separator();
+                    self.details(ui);
+                });
         });
         ui.scope_builder(UiBuilder::new().max_rect(middle), |ui| self.canvas(ui));
         self.projects_window(ui);

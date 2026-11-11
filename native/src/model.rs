@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 pub struct Project {
     pub version: u32,
     pub name: String,
-    /// "portrait" (1080 × 1350) or "square" (1080 × 1080).
+    /// "portrait" (1080 × 1350), "square" (1080 × 1080) or "story" (1080 × 1920; native Folio only).
     pub format: String,
     /// "light" or "dark".
     pub theme: String,
@@ -43,12 +43,17 @@ pub struct Slide {
     pub title_size: f32,
     pub texture: bool,
     pub swipe: bool,
+    /// A blank slide's own background color; without one it takes the theme's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-/// A movable element on a slide: a picture (`src`, a data URL) or text.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A movable element on a slide: a picture (`src`, a data URL), text, or a shape. Electron Folio knows pictures and
+/// text inside the slide; shapes and the styling below (`shape` onward) are native Folio's, and a project that uses
+/// them no longer opens in Electron Folio.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Layer {
     #[serde(default)]
@@ -67,12 +72,71 @@ pub struct Layer {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_size: Option<f32>,
+    /// A shape's outline: "rect", "ellipse", "triangle" or "star". Its fill is `color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    /// Rounded corners, for a rectangle or a picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f32>,
+    /// Degrees clockwise around the element's middle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f32>,
+    /// 0 (invisible) to 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f32>,
+    /// Text: "left", "center" or "right"; without one it follows the project's direction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<String>,
+    /// Text: bold unless this says otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    /// Text: its own font; without one, the project's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// A shape's outline color and width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stroke_width: Option<f32>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-/// Electron Folio's ten layouts: id, name, icon, and what it's for.
-pub const LAYOUTS: [(&str, &str, &str, &str); 10] = [
+impl Layer {
+    pub fn rotation(&self) -> f32 {
+        self.rotation.filter(|r| r.is_finite()).unwrap_or(0.0)
+    }
+    pub fn opacity(&self) -> f32 {
+        self.opacity.filter(|o| o.is_finite()).unwrap_or(1.0).clamp(0.0, 1.0)
+    }
+    /// The middle of its box, which it turns around.
+    pub fn center(&self) -> (f32, f32) {
+        (self.x + self.width / 2.0, self.y + self.height / 2.0)
+    }
+    /// What the element list calls it.
+    pub fn label(&self) -> String {
+        match self.kind.as_str() {
+            "text" => self.text.as_deref().filter(|t| !t.trim().is_empty()).unwrap_or("Text").lines().next().unwrap_or("Text").chars().take(28).collect(),
+            "shape" => match self.shape.as_deref() {
+                Some("ellipse") => "Ellipse".into(),
+                Some("triangle") => "Triangle".into(),
+                Some("star") => "Star".into(),
+                _ => "Rectangle".into(),
+            },
+            _ => "Picture".into(),
+        }
+    }
+}
+
+pub const SHAPES: [(&str, &str); 4] = [("rect", "Rectangle"), ("ellipse", "Ellipse"), ("triangle", "Triangle"), ("star", "Star")];
+
+/// Fonts a text element can have of its own: the brand fonts and a few more that Windows ships.
+pub const LAYER_FONTS: [&str; 10] = ["Arial", "Georgia", "Verdana", "Trebuchet MS", "Segoe UI", "Calibri", "Times New Roman", "Courier New", "Impact", "Comic Sans MS"];
+
+pub const MAX_LAYERS: usize = 100;
+
+/// Electron Folio's ten layouts, and native Folio's blank one: id, name, icon, and what it's for.
+pub const LAYOUTS: [(&str, &str, &str, &str); 11] = [
     (
         "introduction",
         "Introduction",
@@ -103,6 +167,7 @@ pub const LAYOUTS: [(&str, &str, &str, &str); 10] = [
         "≋",
         "A continuous story, inspired by Untitled.png",
     ),
+    ("blank", "Blank", "□", "An empty slide for your own text, shapes and pictures"),
 ];
 
 pub const FONTS: [&str; 4] = ["Arial", "Georgia", "Verdana", "Trebuchet MS"];
@@ -129,10 +194,10 @@ fn hex_color(value: &str) -> bool {
 
 impl Project {
     pub fn height(&self) -> f32 {
-        if self.format == "square" {
-            1080.0
-        } else {
-            1350.0
+        match self.format.as_str() {
+            "square" => 1080.0,
+            "story" => 1920.0,
+            _ => 1350.0,
         }
     }
 
@@ -149,7 +214,7 @@ impl Project {
         if self.version != 1
             || self.slides.is_empty()
             || self.slides.len() > 20
-            || !["portrait", "square"].contains(&self.format.as_str())
+            || !["portrait", "square", "story"].contains(&self.format.as_str())
             || !["light", "dark"].contains(&self.theme.as_str())
         {
             return Err("This is not a supported Folio project.".into());
@@ -170,8 +235,11 @@ impl Project {
         {
             return Err("Invalid project text.".into());
         }
-        let height = self.height() + 0.01;
+        let height = self.height();
         for slide in &self.slides {
+            if slide.background.as_deref().is_some_and(|c| !hex_color(c)) {
+                return Err("Invalid slide background.".into());
+            }
             if !LAYOUTS.iter().any(|l| l.0 == slide.layout)
                 || !(44.0..=120.0).contains(&slide.title_size)
             {
@@ -189,18 +257,33 @@ impl Project {
             if !image_url(&slide.image) || !image_url(&slide.image2) {
                 return Err("Invalid slide image.".into());
             }
-            if slide.layers.len() > 30 {
+            if slide.layers.len() > MAX_LAYERS {
                 return Err("Invalid slide elements.".into());
             }
             for layer in &slide.layers {
-                if layer.x < 0.0
-                    || layer.y < 0.0
-                    || layer.width < 20.0
-                    || layer.height < 20.0
-                    || layer.x + layer.width > 1080.01
-                    || layer.y + layer.height > height
+                // An element may hang over the slide's edge (a circle half off a corner), but not leave it.
+                let numbers = [layer.x, layer.y, layer.width, layer.height];
+                if numbers.iter().any(|n| !n.is_finite())
+                    || layer.width < 2.0
+                    || layer.height < 2.0
+                    || layer.width > 8000.0
+                    || layer.height > 8000.0
+                    || layer.x + layer.width <= 0.0
+                    || layer.y + layer.height <= 0.0
+                    || layer.x >= 1080.0
+                    || layer.y >= height
                 {
                     return Err("Element is outside the slide.".into());
+                }
+                let styled = layer.rotation.is_none_or(f32::is_finite)
+                    && layer.opacity.is_none_or(|o| (0.0..=1.0).contains(&o))
+                    && layer.radius.is_none_or(|r| (0.0..=4000.0).contains(&r))
+                    && layer.align.as_deref().is_none_or(|a| ["left", "center", "right"].contains(&a))
+                    && layer.font.as_deref().is_none_or(|f| LAYER_FONTS.contains(&f))
+                    && layer.stroke.as_deref().is_none_or(hex_color)
+                    && layer.stroke_width.is_none_or(|w| (0.0..=200.0).contains(&w));
+                if !styled {
+                    return Err("Invalid slide element.".into());
                 }
                 let valid = match layer.kind.as_str() {
                     "image" => layer
@@ -211,9 +294,13 @@ impl Project {
                         layer
                             .text
                             .as_ref()
-                            .is_some_and(|t| t.chars().count() <= 500)
+                            .is_some_and(|t| t.chars().count() <= 2000)
                             && layer.color.as_deref().is_some_and(hex_color)
-                            && layer.font_size.is_some_and(|s| (24.0..=180.0).contains(&s))
+                            && layer.font_size.is_some_and(|s| (8.0..=600.0).contains(&s))
+                    }
+                    "shape" => {
+                        layer.shape.as_deref().is_some_and(|s| SHAPES.iter().any(|known| known.0 == s))
+                            && layer.color.as_deref().is_some_and(hex_color)
                     }
                     _ => false,
                 };
@@ -311,6 +398,7 @@ impl Slide {
             title_size: 88.0,
             texture: true,
             swipe: true,
+            background: None,
             extra: Map::new(),
         }
     }
@@ -349,23 +437,35 @@ mod tests {
         project.font = "Comic Sans MS".into();
         assert!(project.validate().is_err());
         let mut project = Project::starter(&mut ids());
-        project.slides[0].layers.push(Layer {
-            id: String::new(),
+        let text = Layer {
             kind: "text".into(),
             x: 1000.0,
             y: 0.0,
             width: 200.0,
             height: 50.0,
-            src: None,
             text: Some("x".into()),
             color: Some("#000000".into()),
             font_size: Some(40.0),
-            extra: Map::new(),
-        });
+            ..Layer::default()
+        };
+        // Over the edge is fine; off the slide isn't.
+        project.slides[0].layers.push(text.clone());
+        assert_eq!(project.validate(), Ok(()));
+        project.slides[0].layers[0].x = 1080.0;
         assert_eq!(
             project.validate(),
             Err("Element is outside the slide.".into())
         );
+        project.slides[0].layers[0] = Layer { kind: "shape".into(), shape: Some("blob".into()), ..text.clone() };
+        assert_eq!(project.validate(), Err("Invalid slide element.".into()));
+        project.slides[0].layers[0] = Layer { kind: "shape".into(), shape: Some("star".into()), rotation: Some(30.0), opacity: Some(0.5), ..text.clone() };
+        assert_eq!(project.validate(), Ok(()));
+        project.slides[0].layers[0].opacity = Some(1.5);
+        assert!(project.validate().is_err());
+        project.slides[0].layout = "blank".into();
+        project.slides[0].layers.clear();
+        project.format = "story".into();
+        assert_eq!((project.validate(), project.height()), (Ok(()), 1920.0));
         let mut project = Project::starter(&mut ids());
         project.slides[1].image = "data:image/gif;base64,AAAA".into();
         assert!(project.validate().is_err());

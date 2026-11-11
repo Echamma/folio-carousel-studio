@@ -1,6 +1,7 @@
 //! Folio's native carousel editor. Projects are the same `.folio.json` files Electron Folio saves.
 
 pub mod app;
+pub mod designs;
 pub mod model;
 pub mod render;
 pub mod samples;
