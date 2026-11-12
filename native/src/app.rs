@@ -1480,8 +1480,14 @@ impl CanopyApp for Folio {
     fn save(&mut self) -> Result<(), String> {
         // Write the recovery first so a project-folder failure still leaves the current work available.
         self.edited_at = None;
+        let named = self.project.extra.contains_key("folderFileName");
         storage::save_recovery(&self.place, &self.project)?;
         storage::save(&self.place, &mut self.project, new_id)?;
+        if !named {
+            // The first save gives the project its file. The recovery copy has to know it too, or the next start
+            // takes that copy for a new project and saves it a second time.
+            storage::save_recovery(&self.place, &self.project)?;
+        }
         Ok(())
     }
 
@@ -1519,6 +1525,25 @@ mod tests {
             super::storage::load_recovery(&app.place, 0).unwrap().name,
             "Current work"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_new_project_saved_once_is_not_saved_twice_after_a_restart() {
+        use canopy_ui::{CanopyApp, Place, SpaceInfo};
+        let root = std::env::temp_dir().join(format!("folio-first-save-{}", super::new_id()));
+        let place = Place {
+            space: Some(SpaceInfo { id: "test".into(), name: "test".into(), dir: root.clone() }),
+            projects_dir: root.join("projects"),
+            data_dir: root.join("data"),
+            exports_dir: root.clone(),
+        };
+        let mut app = super::Folio::new(place.clone());
+        app.save().unwrap();
+        // Started again, it picks up the same project, and saving it writes the same file.
+        let mut again = super::Folio::new(place.clone());
+        again.save().unwrap();
+        assert_eq!(super::storage::list(&place).len(), 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 
