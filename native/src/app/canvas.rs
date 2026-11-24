@@ -176,10 +176,11 @@ impl Folio {
 
     fn add_text(&mut self, words: &str, size: f32, bold: bool, height: f32) {
         let y = ((self.project.height() - height) / 2.0).round();
+        let x = ((self.project.width() - 800.0) / 2.0).round();
         let color = self.theme_ink().to_owned();
         self.add_layer(Layer {
             kind: "text".into(),
-            x: 140.0,
+            x,
             y,
             width: 800.0,
             height,
@@ -196,7 +197,7 @@ impl Folio {
         self.add_layer(Layer {
             kind: "shape".into(),
             shape: Some(shape.into()),
-            x: ((1080.0 - size.0) / 2.0).round(),
+            x: ((self.project.width() - size.0) / 2.0).round(),
             y: ((h - size.1) / 2.0).round(),
             width: size.0,
             height: size.1,
@@ -266,7 +267,7 @@ impl Folio {
             self.notice = Some(format!("A slide can have up to {MAX_LAYERS} elements."));
             return;
         }
-        let h = self.project.height();
+        let (w, h) = (self.project.width(), self.project.height());
         self.picked.clear();
         for mut layer in copies {
             layer.id = new_id();
@@ -274,7 +275,7 @@ impl Folio {
                 layer.x += 24.0;
                 layer.y += 24.0;
             }
-            keep_on_slide(&mut layer, h);
+            keep_on_slide(&mut layer, w, h);
             self.picked.push(layer.id.clone());
             self.slide().layers.push(layer);
         }
@@ -332,10 +333,10 @@ impl Folio {
     /// Lines the picked elements up: one against the slide, several against the box around them.
     fn line_up(&mut self, line: Line) {
         let indices = self.picked_indices();
-        let h = self.project.height();
+        let (w, h) = (self.project.width(), self.project.height());
         let layers = &mut self.slide().layers;
         let (left, top, right, bottom) = if indices.len() == 1 {
-            (0.0, 0.0, 1080.0, h)
+            (0.0, 0.0, w, h)
         } else {
             indices.iter().map(|&i| &layers[i]).fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |b, l| (b.0.min(l.x), b.1.min(l.y), b.2.max(l.x + l.width), b.3.max(l.y + l.height)))
         };
@@ -435,12 +436,12 @@ impl Folio {
             self.reorder(order);
         }
         if nudge != Vec2::ZERO {
-            let h = self.project.height();
+            let (w, h) = (self.project.width(), self.project.height());
             for i in self.picked_indices() {
                 let layer = &mut self.slide().layers[i];
                 layer.x += nudge.x;
                 layer.y += nudge.y;
-                keep_on_slide(layer, h);
+                keep_on_slide(layer, w, h);
             }
             return true;
         }
@@ -450,7 +451,7 @@ impl Folio {
     /// The elements on the slide: picking, dragging, stretching and turning them, with their outlines and handles.
     /// `slide` is where the slide is drawn, `scale` its pixels per slide unit, `area` the room around it.
     pub(super) fn elements(&mut self, ui: &mut Ui, slide: Rect, scale: f32, area: Rect) {
-        let h = self.project.height();
+        let (w, h) = (self.project.width(), self.project.height());
         let index = self.slide_index();
         let frames: Vec<Frame> = self.project.slides[index].layers.iter().map(Frame::of).collect();
         self.picked.retain(|id| frames.iter().any(|f| &f.id == id));
@@ -531,7 +532,7 @@ impl Folio {
                         // edges and middles of everything staying put.
                         let (l, t, r, b) = drag.start.iter().fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |b, f| (b.0.min(f.x), b.1.min(f.y), b.2.max(f.x + f.w), b.3.max(f.y + f.h)));
                         let still: Vec<&Frame> = frames.iter().filter(|f| !drag.start.iter().any(|s| s.id == f.id)).collect();
-                        let mut down = vec![0.0, 540.0, 1080.0];
+                        let mut down = vec![0.0, w / 2.0, w];
                         let mut across = vec![0.0, h / 2.0, h];
                         for f in still {
                             down.extend([f.x, f.x + f.w / 2.0, f.x + f.w]);
@@ -550,7 +551,7 @@ impl Folio {
                     for frame in &drag.start {
                         if let Some(layer) = layers.iter_mut().find(|l| l.id == frame.id) {
                             (layer.x, layer.y) = ((frame.x + by.x).round(), (frame.y + by.y).round());
-                            keep_on_slide(layer, h);
+                            keep_on_slide(layer, w, h);
                         }
                     }
                 }
@@ -564,7 +565,7 @@ impl Folio {
                             // A text box pulled by a corner grows its letters with it.
                             layer.font_size = Some((size * w / frame.w).round().clamp(8.0, 600.0));
                         }
-                        keep_on_slide(layer, h);
+                        keep_on_slide(layer, w, h);
                     }
                 }
                 Mode::Rotate => {
@@ -648,7 +649,7 @@ impl Folio {
         for guide in &self.guides {
             let (from, to) = match *guide {
                 Guide::Down(x) => (pos2(x, 0.0), pos2(x, h)),
-                Guide::Across(y) => (pos2(0.0, y), pos2(1080.0, y)),
+                Guide::Across(y) => (pos2(0.0, y), pos2(w, y)),
             };
             painter.line_segment([to_screen(from), to_screen(to)], Stroke::new(1.0, GUIDE));
         }
@@ -658,7 +659,7 @@ impl Folio {
     pub(super) fn inspector(&mut self, ui: &mut Ui) {
         let index = self.slide_index();
         let indices = self.picked_indices();
-        let slide_h = self.project.height();
+        let (slide_w, slide_h) = (self.project.width(), self.project.height());
         let brand_font = self.project.font.clone();
         let focus = std::mem::take(&mut self.focus_text);
         let mut order = None;
@@ -758,7 +759,7 @@ impl Folio {
                 }
                 ui.end_row();
             });
-            keep_on_slide(layer, slide_h);
+            keep_on_slide(layer, slide_w, slide_h);
         } else if indices.len() > 1 {
             ui.label(egui::RichText::new(format!("{} elements", indices.len())).font(font::bold(14.0)).color(color::INK));
             ui.label(egui::RichText::new("Drag any of them to move them together.").font(font::ui(12.0)).color(color::INK_MUTED));
@@ -820,7 +821,7 @@ impl Folio {
                         let layer = &mut self.project.slides[index].layers[*i];
                         layer.src = Some(url);
                         layer.height = (layer.width * h as f32 / w as f32).round().max(SMALLEST);
-                        keep_on_slide(layer, slide_h);
+                        keep_on_slide(layer, slide_w, slide_h);
                     }
                     Ok(_) => self.notice = Some("The picture is empty".into()),
                     Err(error) => self.notice = Some(error),
@@ -848,10 +849,10 @@ impl Folio {
 }
 
 /// An element can hang over the slide's edge, but a strip of it stays on the slide to grab.
-pub(super) fn keep_on_slide(layer: &mut Layer, slide_height: f32) {
+pub(super) fn keep_on_slide(layer: &mut Layer, slide_width: f32, slide_height: f32) {
     layer.width = layer.width.clamp(2.0, 8000.0);
     layer.height = layer.height.clamp(2.0, 8000.0);
-    layer.x = layer.x.clamp(SMALLEST - layer.width, 1080.0 - SMALLEST);
+    layer.x = layer.x.clamp(SMALLEST - layer.width, slide_width - SMALLEST);
     layer.y = layer.y.clamp(SMALLEST - layer.height, slide_height - SMALLEST);
 }
 
@@ -915,7 +916,10 @@ mod tests {
     #[test]
     fn elements_stay_reachable() {
         let mut layer = Layer { x: 5000.0, y: -5000.0, width: 300.0, height: 200.0, ..Layer::default() };
-        keep_on_slide(&mut layer, 1350.0);
+        keep_on_slide(&mut layer, 1080.0, 1350.0);
         assert_eq!((layer.x, layer.y), (1080.0 - SMALLEST, SMALLEST - 200.0));
+        let mut layer = Layer { x: 5000.0, y: 5000.0, width: 300.0, height: 200.0, ..Layer::default() };
+        keep_on_slide(&mut layer, 1920.0, 1080.0);
+        assert_eq!((layer.x, layer.y), (1920.0 - SMALLEST, 1080.0 - SMALLEST));
     }
 }

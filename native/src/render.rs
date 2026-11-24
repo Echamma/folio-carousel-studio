@@ -1,5 +1,7 @@
 //! Slides drawn the way Electron Folio's canvas draws them (`renderer.js`): the same layouts, sizes, colors and
-//! text fitting, at full size (1080 wide, 1080 or 1350 tall). Exports and the editor's preview both use it.
+//! text fitting, at full size (1080 wide, 1080 or 1350 tall; native Folio adds 1080 x 1920 and 1920 x 1080, where
+//! the layouts stretch across the extra width). Exports and the editor's preview both use it. A transparent slide
+//! leaves its background out, so its pixmap has real alpha.
 
 use crate::model::{Layer, Project, Slide};
 use crate::text::{Align, Faces, has_rtl, wrap};
@@ -320,12 +322,12 @@ fn arc(cx: f32, cy: f32, r: f32, start: f32, end: f32) -> Option<tiny_skia::Path
     path.finish()
 }
 
-/// The slide at `index`, 1080 wide; and whether any text had to shrink or be cut to fit.
+/// The slide at `index`, at the project's size; and whether any text had to shrink or be cut to fit.
 pub fn slide(project: &Project, index: usize, pictures: &mut Pictures) -> (Pixmap, bool) {
     let slide = &project.slides[index];
-    let h = project.height();
+    let (w, h) = (project.width(), project.height());
     let mut canvas = Canvas {
-        pixmap: Pixmap::new(1080, h as u32).unwrap(),
+        pixmap: Pixmap::new(w as u32, h as u32).unwrap(),
         clip: None,
         rtl: project.direction.as_deref() == Some("rtl"),
         reduced: false,
@@ -335,8 +337,9 @@ pub fn slide(project: &Project, index: usize, pictures: &mut Pictures) -> (Pixma
         navy(&mut canvas, slide, project, index, h);
     } else if slide.layout == "blank" {
         // Nothing but its background: everything on it is an element.
-        let theme = if project.theme == "dark" { DARK.bg } else { LIGHT.bg };
-        canvas.rect(0.0, 0.0, 1080.0, h, slide.background.as_deref().unwrap_or(theme));
+        if !slide.transparent {
+            canvas.rect(0.0, 0.0, w, h, project.fill(slide));
+        }
     } else {
         base(&mut canvas, slide, project, index, h, pictures);
     }
@@ -452,13 +455,19 @@ fn base(
         &LIGHT
     };
     let (accent, font) = (project.accent.as_str(), project.font.as_str());
-    let (margin, width, bottom) = (88.0, 904.0, h - 190.0);
+    // Layouts are drawn for 1080 wide; a wider slide stretches the content across and moves what sits on the right
+    // (page number, swipe cue, the introduction's arrow) over by the extra width `ox`.
+    let w = project.width();
+    let ox = w - 1080.0;
+    let (margin, width, bottom) = (88.0, w - 176.0, h - 190.0);
     let count = project.slides.len();
-    c.rect(0.0, 0.0, 1080.0, h, p.bg);
+    if !slide.transparent {
+        c.rect(0.0, 0.0, w, h, p.bg);
+    }
     if slide.texture {
         let line = format!("{}05", p.fg);
         let mut x = -h;
-        while x < 1080.0 {
+        while x < w {
             let mut path = PathBuilder::new();
             path.move_to(x, 0.0);
             path.line_to(x + h, h);
@@ -467,7 +476,7 @@ fn base(
         }
         let dot = format!("{accent}06");
         let mut x = 18.0;
-        while x < 1080.0 {
+        while x < w {
             let mut y = 18.0;
             while y < h {
                 c.circle(x, y, 1.2, &dot);
@@ -479,7 +488,7 @@ fn base(
     c.rect(
         0.0,
         0.0,
-        1080.0 * (index + 1) as f32 / count as f32,
+        w * (index + 1) as f32 / count as f32,
         8.0,
         accent,
     );
@@ -499,7 +508,7 @@ fn base(
         let reduced = c.reduced;
         c.text(
             &label,
-            880.0,
+            880.0 + ox,
             88.0,
             140.0,
             22.0,
@@ -549,13 +558,13 @@ fn base(
                 f32::INFINITY,
             );
             c.stroke(
-                arc(897.0, bottom - 38.0, 56.0, 0.15, PI * 1.85),
+                arc(897.0 + ox, bottom - 38.0, 56.0, 0.15, PI * 1.85),
                 4.0,
                 accent,
             );
             c.text(
                 "↗",
-                854.0,
+                854.0 + ox,
                 bottom - 86.0,
                 130.0,
                 83.0,
@@ -669,21 +678,23 @@ fn base(
         "image-left" | "image-right" => {
             let left = slide.layout == "image-left";
             let y = 238.0;
+            // Half the content width each, less a gap: 421 and 420 on a 1080-wide slide.
+            let half = (width - 62.0) / 2.0;
             c.picture(
                 pictures.get(&slide.image),
-                if left { margin } else { 571.0 },
+                if left { margin } else { margin + width - half },
                 y,
-                421.0,
+                half,
                 bottom - y,
                 p,
                 accent,
             );
-            let tx = if left { 558.0 } else { margin };
+            let tx = if left { margin + half + 49.0 } else { margin };
             let th = c.text(
                 title,
                 tx,
                 y + 18.0,
-                420.0,
+                half - 1.0,
                 size * 0.73,
                 p.fg,
                 font,
@@ -694,7 +705,7 @@ fn base(
                 body,
                 tx,
                 y + th + 50.0,
-                420.0,
+                half - 1.0,
                 28.0,
                 p.muted,
                 font,
@@ -717,20 +728,21 @@ fn base(
             let y = 231.0 + th;
             let image_h = bottom - y - 110.0;
             if slide.layout == "compare" {
+                let half = (width - 24.0) / 2.0;
                 c.picture(
                     pictures.get(&slide.image),
                     margin,
                     y,
-                    440.0,
+                    half,
                     image_h,
                     p,
                     accent,
                 );
                 c.picture(
                     pictures.get(&slide.image2),
-                    552.0,
+                    margin + width - half,
                     y,
-                    440.0,
+                    half,
                     image_h,
                     p,
                     accent,
@@ -761,7 +773,7 @@ fn base(
         "thank-you" => {
             c.text(
                 "✳",
-                462.0,
+                462.0 + ox / 2.0,
                 h * 0.23,
                 200.0,
                 132.0,
@@ -832,7 +844,7 @@ fn base(
             } else {
                 "SWIPE FOR MORE"
             },
-            734.0,
+            734.0 + ox,
             h - 102.0,
             200.0,
             16.0,
@@ -841,10 +853,10 @@ fn base(
             600,
             f32::INFINITY,
         );
-        c.rounded(936.0, h - 122.0, 56.0, 56.0, 28.0, accent);
+        c.rounded(936.0 + ox, h - 122.0, 56.0, 56.0, 28.0, accent);
         c.text(
             if last { "♡" } else { "→" },
-            950.0,
+            950.0 + ox,
             h - 111.0,
             50.0,
             29.0,
@@ -866,10 +878,11 @@ pub fn ribbon_noise(x: i32, seed: i32) -> f32 {
 
 /// A torn white ribbon across the slide at `y`, with crumbs along both edges.
 fn ribbon(c: &mut Canvas, y: f32, index: usize, seed: i32) {
-    let world = |x: i32| index as i32 * 1080 + x;
+    let w = c.pixmap.width() as i32;
+    let world = |x: i32| index as i32 * w + x;
     let mut path = PathBuilder::new();
     let mut x = -4;
-    while x <= 1084 {
+    while x <= w + 4 {
         let w = world(x);
         let edge = y - 24.0 - ribbon_noise(w, seed) * 15.0
             + ribbon_noise(w.div_euclid(14), seed + 1) * 10.0;
@@ -880,7 +893,7 @@ fn ribbon(c: &mut Canvas, y: f32, index: usize, seed: i32) {
         }
         x += 2;
     }
-    let mut x = 1084;
+    let mut x = w + 4;
     while x >= -4 {
         let w = world(x);
         path.line_to(
@@ -893,7 +906,7 @@ fn ribbon(c: &mut Canvas, y: f32, index: usize, seed: i32) {
     path.close();
     c.fill(path.finish(), "#ffffff");
     let mut x = -4;
-    while x < 1084 {
+    while x < w + 4 {
         let w = world(x);
         for direction in [-1.0, 1.0] {
             let offset = 25.0 + ribbon_noise(w, seed + 4) * 38.0;
@@ -907,13 +920,17 @@ fn ribbon(c: &mut Canvas, y: f32, index: usize, seed: i32) {
 fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: f32) {
     let cream = project.accent.as_str();
     let (top, bottom) = (height * 0.17, height * 0.81);
-    c.rect(0.0, 0.0, 1080.0, height, "#3c415d");
+    let w = project.width();
+    let ox = w - 1080.0;
+    if !slide.transparent {
+        c.rect(0.0, 0.0, w, height, project.fill(slide));
+    }
     if slide.texture {
         ribbon(c, top, index, 87);
         ribbon(c, bottom, index, 321);
     } else {
-        c.rect(0.0, top - 24.0, 1080.0, 48.0, "#ffffff");
-        c.rect(0.0, bottom - 24.0, 1080.0, 48.0, "#ffffff");
+        c.rect(0.0, top - 24.0, w, 48.0, "#ffffff");
+        c.rect(0.0, bottom - 24.0, w, 48.0, "#ffffff");
     }
     let title_size = slide.title_size;
     let centered = slide.body.trim().is_empty() && slide.eyebrow.trim().is_empty();
@@ -922,7 +939,7 @@ fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: 
         let rtl = has_rtl(&slide.title);
         let mut actual = title_size;
         let lines = loop {
-            let lines = wrap(&slide.title, 830.0, &|s| faces.measure(s, actual, rtl));
+            let lines = wrap(&slide.title, 830.0 + ox, &|s| faces.measure(s, actual, rtl));
             if lines.len() as f32 * actual * 1.18 <= bottom - top - 190.0 || actual <= 18.0 {
                 break lines;
             }
@@ -937,7 +954,7 @@ fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: 
                 &mut c.pixmap,
                 None,
                 line,
-                540.0,
+                w / 2.0,
                 y + i as f32 * actual * 1.18,
                 actual,
                 rtl,
@@ -946,7 +963,7 @@ fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: 
             );
         }
     } else {
-        let (x, width) = (88.0, 900.0);
+        let (x, width) = (88.0, 900.0 + ox);
         let mut y = top + 164.0;
         if !slide.eyebrow.is_empty() {
             c.text(
@@ -996,7 +1013,7 @@ fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: 
             &line,
             88.0,
             height - 95.0,
-            720.0,
+            720.0 + ox,
             20.0,
             cream,
             &project.font,
@@ -1005,7 +1022,7 @@ fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: 
         );
         c.text(
             &format!("{} / {}  →", index + 1, project.slides.len()),
-            880.0,
+            880.0 + ox,
             height - 95.0,
             150.0,
             20.0,
@@ -1018,20 +1035,116 @@ fn navy(c: &mut Canvas, slide: &Slide, project: &Project, index: usize, height: 
     }
 }
 
+/// The picture files a slide exports as.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Picture {
+    #[default]
+    Png,
+    /// Lossless, so text stays crisp; keeps transparency like PNG.
+    Webp,
+    /// No transparency: see-through parts get the slide's fill color ([`Project::fill`]).
+    Jpg,
+}
+
+impl Picture {
+    pub const ALL: [Picture; 3] = [Picture::Png, Picture::Webp, Picture::Jpg];
+
+    pub fn extension(self) -> &'static str {
+        match self {
+            Picture::Png => "png",
+            Picture::Webp => "webp",
+            Picture::Jpg => "jpg",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Picture::Png => "PNG",
+            Picture::Webp => "WebP",
+            Picture::Jpg => "JPG",
+        }
+    }
+
+    pub fn keeps_transparency(self) -> bool {
+        self != Picture::Jpg
+    }
+}
+
+/// A pixmap's pixels as plain (not premultiplied) RGBA, as files and the clipboard want them.
+pub fn unpremultiplied(pixmap: &Pixmap) -> Vec<u8> {
+    pixmap
+        .pixels()
+        .iter()
+        .flat_map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect()
+}
+
+/// A slide laid on a gray-and-white checkerboard, as the editor shows see-through parts. Opaque slides come back
+/// as they are.
+pub fn on_checkerboard(pixmap: Pixmap) -> Pixmap {
+    if pixmap.pixels().iter().all(|p| p.alpha() == 255) {
+        return pixmap;
+    }
+    let mut board = Pixmap::new(pixmap.width(), pixmap.height()).unwrap();
+    board.fill(Color::WHITE);
+    let mut gray = Paint::default();
+    gray.set_color_rgba8(214, 214, 214, 255);
+    let square = 30;
+    for row in 0..pixmap.height().div_ceil(square) {
+        for col in (row % 2..pixmap.width().div_ceil(square)).step_by(2) {
+            if let Some(rect) = Rect::from_xywh((col * square) as f32, (row * square) as f32, square as f32, square as f32) {
+                board.fill_rect(rect, &gray, Transform::identity(), None);
+            }
+        }
+    }
+    board.draw_pixmap(0, 0, pixmap.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+    board
+}
+
+/// A slide as a picture file's bytes.
+pub fn encode(project: &Project, index: usize, pictures: &mut Pictures, kind: Picture) -> Result<Vec<u8>, String> {
+    let pixmap = slide(project, index, pictures).0;
+    let (w, h) = (pixmap.width(), pixmap.height());
+    let mut out = Vec::new();
+    let written = match kind {
+        Picture::Png => image::ImageEncoder::write_image(
+            image::codecs::png::PngEncoder::new(&mut out),
+            &unpremultiplied(&pixmap),
+            w,
+            h,
+            image::ExtendedColorType::Rgba8,
+        ),
+        Picture::Webp => image::ImageEncoder::write_image(
+            image::codecs::webp::WebPEncoder::new_lossless(&mut out),
+            &unpremultiplied(&pixmap),
+            w,
+            h,
+            image::ExtendedColorType::Rgba8,
+        ),
+        Picture::Jpg => {
+            let mut flat = Pixmap::new(w, h).unwrap();
+            flat.fill(color(project.fill(&project.slides[index])));
+            flat.draw_pixmap(0, 0, pixmap.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+            let rgb: Vec<u8> = flat.data().chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+            image::ImageEncoder::write_image(
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 92),
+                &rgb,
+                w,
+                h,
+                image::ExtendedColorType::Rgb8,
+            )
+        }
+    };
+    written.map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
 /// A slide as PNG bytes.
 pub fn png(project: &Project, index: usize, pictures: &mut Pictures) -> Result<Vec<u8>, String> {
-    // Slides are opaque, so their premultiplied pixels are the plain ones.
-    let pixmap = slide(project, index, pictures).0;
-    let mut png = Vec::new();
-    image::ImageEncoder::write_image(
-        image::codecs::png::PngEncoder::new(&mut png),
-        pixmap.data(),
-        pixmap.width(),
-        pixmap.height(),
-        image::ExtendedColorType::Rgba8,
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(png)
+    encode(project, index, pictures, Picture::Png)
 }
 
 #[cfg(test)]
@@ -1074,6 +1187,37 @@ mod tests {
         assert_eq!(at(900, 10), (0, 0, 0));
         // The turned text put some white somewhere inside its box.
         assert!((900..1100).any(|y| (300..700).any(|x| at(x, y).0 > 200)));
+    }
+
+    #[test]
+    fn every_layout_fills_a_landscape_slide_or_leaves_it_see_through() {
+        let mut n = 0;
+        let mut ids = || {
+            n += 1;
+            format!("id-{n}")
+        };
+        let mut project = Project::starter(&mut ids);
+        project.format = "landscape".into();
+        project.slides = crate::model::LAYOUTS.iter().map(|l| Slide::new(l.0, ids())).collect();
+        assert_eq!(project.validate(), Ok(()));
+        for i in 0..project.slides.len() {
+            let layout = project.slides[i].layout.clone();
+            project.slides[i].transparent = false;
+            let filled = slide(&project, i, &mut Pictures::default()).0;
+            assert_eq!((filled.width(), filled.height()), (1920, 1080), "{layout}");
+            assert!(filled.pixels().iter().all(|p| p.alpha() == 255), "{layout} is opaque");
+            project.slides[i].transparent = true;
+            let clear = slide(&project, i, &mut Pictures::default()).0;
+            assert!(clear.pixels().iter().any(|p| p.alpha() == 0), "{layout} has see-through parts");
+            if layout != "blank" && layout != "navy-ribbon" {
+                // The swipe cue moved to the right edge: its accent circle sits at 1776..1832 across.
+                let cue = filled.pixel(1804, 1080 - 94).unwrap();
+                assert_eq!((cue.red(), cue.green(), cue.blue()), (0xe6, 0x54, 0x43), "{layout}");
+            }
+        }
+        // The checkerboard only goes behind see-through slides.
+        let shown = on_checkerboard(slide(&project, 0, &mut Pictures::default()).0);
+        assert!(shown.pixels().iter().all(|p| p.alpha() == 255));
     }
 
     #[test]

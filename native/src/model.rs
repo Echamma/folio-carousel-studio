@@ -8,7 +8,8 @@ use serde_json::{Map, Value};
 pub struct Project {
     pub version: u32,
     pub name: String,
-    /// "portrait" (1080 × 1350), "square" (1080 × 1080) or "story" (1080 × 1920; native Folio only).
+    /// "portrait" (1080 × 1350), "square" (1080 × 1080), or native Folio's "story" (1080 × 1920) and "landscape"
+    /// (1920 × 1080, 16:9).
     pub format: String,
     /// "light" or "dark".
     pub theme: String,
@@ -46,6 +47,10 @@ pub struct Slide {
     /// A blank slide's own background color; without one it takes the theme's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    /// No fill behind the slide at all (native Folio only): PNG and WebP exports keep it see-through, JPG fills it
+    /// with [`Slide::fill`]'s color, and the editor shows a checkerboard there.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub transparent: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -170,6 +175,14 @@ pub const LAYOUTS: [(&str, &str, &str, &str); 11] = [
     ("blank", "Blank", "□", "An empty slide for your own text, shapes and pictures"),
 ];
 
+/// Every slide size: id, name, width, height.
+pub const FORMATS: [(&str, &str, f32, f32); 4] = [
+    ("portrait", "Portrait", 1080.0, 1350.0),
+    ("square", "Square", 1080.0, 1080.0),
+    ("story", "Story", 1080.0, 1920.0),
+    ("landscape", "Landscape", 1920.0, 1080.0),
+];
+
 pub const FONTS: [&str; 4] = ["Arial", "Georgia", "Verdana", "Trebuchet MS"];
 
 const IMAGE_URL: [&str; 3] = [
@@ -193,12 +206,16 @@ fn hex_color(value: &str) -> bool {
 }
 
 impl Project {
+    fn size(&self) -> (f32, f32) {
+        FORMATS.iter().find(|f| f.0 == self.format).map_or((1080.0, 1350.0), |f| (f.2, f.3))
+    }
+
+    pub fn width(&self) -> f32 {
+        self.size().0
+    }
+
     pub fn height(&self) -> f32 {
-        match self.format.as_str() {
-            "square" => 1080.0,
-            "story" => 1920.0,
-            _ => 1350.0,
-        }
+        self.size().1
     }
 
     /// Reads a project, refusing what Electron Folio's `validate()` refuses.
@@ -214,7 +231,7 @@ impl Project {
         if self.version != 1
             || self.slides.is_empty()
             || self.slides.len() > 20
-            || !["portrait", "square", "story"].contains(&self.format.as_str())
+            || !FORMATS.iter().any(|f| f.0 == self.format)
             || !["light", "dark"].contains(&self.theme.as_str())
         {
             return Err("This is not a supported Folio project.".into());
@@ -235,7 +252,7 @@ impl Project {
         {
             return Err("Invalid project text.".into());
         }
-        let height = self.height();
+        let (width, height) = (self.width(), self.height());
         for slide in &self.slides {
             if slide.background.as_deref().is_some_and(|c| !hex_color(c)) {
                 return Err("Invalid slide background.".into());
@@ -270,7 +287,7 @@ impl Project {
                     || layer.height > 8000.0
                     || layer.x + layer.width <= 0.0
                     || layer.y + layer.height <= 0.0
-                    || layer.x >= 1080.0
+                    || layer.x >= width
                     || layer.y >= height
                 {
                     return Err("Element is outside the slide.".into());
@@ -399,7 +416,21 @@ impl Slide {
             texture: true,
             swipe: true,
             background: None,
+            transparent: false,
             extra: Map::new(),
+        }
+    }
+}
+
+impl Project {
+    /// What fills `slide` when it isn't see-through: its own color on a blank slide, navy on the navy ribbon,
+    /// otherwise the theme's background. JPG exports put transparent slides on this.
+    pub fn fill<'a>(&self, slide: &'a Slide) -> &'a str {
+        let theme = if self.theme == "dark" { "#151716" } else { "#fff2ed" };
+        match slide.layout.as_str() {
+            "blank" => slide.background.as_deref().unwrap_or(theme),
+            "navy-ribbon" => "#3c415d",
+            _ => theme,
         }
     }
 }
@@ -466,6 +497,15 @@ mod tests {
         project.slides[0].layers.clear();
         project.format = "story".into();
         assert_eq!((project.validate(), project.height()), (Ok(()), 1920.0));
+        project.format = "landscape".into();
+        assert_eq!((project.validate(), project.width(), project.height()), (Ok(()), 1920.0, 1080.0));
+        // A landscape slide is wider, so an element further right is still on it.
+        project.slides[0].layers.push(Layer { x: 1500.0, ..text.clone() });
+        assert_eq!(project.validate(), Ok(()));
+        project.slides[0].layers[0].x = 1920.0;
+        assert!(project.validate().is_err());
+        project.format = "widescreen".into();
+        assert!(project.validate().is_err());
         let mut project = Project::starter(&mut ids());
         project.slides[1].image = "data:image/gif;base64,AAAA".into();
         assert!(project.validate().is_err());

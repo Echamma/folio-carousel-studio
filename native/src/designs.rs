@@ -27,9 +27,12 @@ fn shape(kind: &str, at: (f32, f32, f32, f32), color: &str) -> Layer {
     Layer { kind: "shape".into(), shape: Some(kind.into()), x: at.0, y: at.1, width: at.2, height: at.3, color: Some(color.into()), ..Layer::default() }
 }
 
-/// A blank slide laid out as `design`, for this project's size, theme and accent.
+/// A blank slide laid out as `design`, for this project's size, theme and accent. Designs are drawn for 1080 wide;
+/// on a wider slide text stretches across and what's centered stays centered.
 pub fn slide(design: &str, project: &Project, new_id: &mut dyn FnMut() -> String) -> Slide {
-    let h = project.height();
+    let (w, h) = (project.width(), project.height());
+    // The extra width, and half of it to keep things centered.
+    let (ox, mid) = (w - 1080.0, (w - 1080.0) / 2.0);
     let dark = project.theme == "dark";
     let kit = Kit {
         fg: if dark { "#faf8f1" } else { "#20211f" },
@@ -41,28 +44,28 @@ pub fn slide(design: &str, project: &Project, new_id: &mut dyn FnMut() -> String
     let mut layers = match design {
         "statement" => vec![
             Layer { radius: Some(7.0), ..shape("rect", (88.0, 96.0, 120.0, 14.0), kit.accent) },
-            text("Say one thing\nthat matters.", (88.0, 160.0, 904.0, 540.0), 112.0, kit.fg),
+            text("Say one thing\nthat matters.", (88.0, 160.0, 904.0 + ox, 540.0), 112.0, kit.fg),
             Layer { bold: Some(false), ..text("Then give it room. A line or two underneath is all it needs.", (88.0, h - 340.0, 760.0, 160.0), 40.0, kit.muted) },
             text(handle, (88.0, h - 130.0, 700.0, 50.0), 30.0, kit.accent),
         ],
         "card" => vec![
-            Layer { opacity: Some(0.9), ..shape("ellipse", (640.0, -180.0, 620.0, 620.0), kit.accent) },
+            Layer { opacity: Some(0.9), ..shape("ellipse", (640.0 + ox, -180.0, 620.0, 620.0), kit.accent) },
             Layer { opacity: Some(0.08), ..shape("ellipse", (-200.0, h - 420.0, 560.0, 560.0), kit.fg) },
-            Layer { radius: Some(40.0), ..shape("rect", (110.0, h / 2.0 - 260.0, 860.0, 520.0), kit.card) },
-            text("A heading\nfor your card", (170.0, h / 2.0 - 190.0, 740.0, 230.0), 76.0, kit.fg),
-            Layer { bold: Some(false), ..text("A few words that say what this is about and why it's worth a look.", (170.0, h / 2.0 + 70.0, 740.0, 150.0), 36.0, kit.muted) },
+            Layer { radius: Some(40.0), ..shape("rect", (110.0 + mid, h / 2.0 - 260.0, 860.0, 520.0), kit.card) },
+            text("A heading\nfor your card", (170.0 + mid, h / 2.0 - 190.0, 740.0, 230.0), 76.0, kit.fg),
+            Layer { bold: Some(false), ..text("A few words that say what this is about and why it's worth a look.", (170.0 + mid, h / 2.0 + 70.0, 740.0, 150.0), 36.0, kit.muted) },
         ],
         "tip" => vec![
             Layer { opacity: Some(0.22), ..text("01", (70.0, 60.0, 760.0, 400.0), 360.0, kit.accent) },
-            text("Name the tip\nin a few words", (88.0, 440.0, 904.0, 250.0), 92.0, kit.fg),
-            Layer { opacity: Some(0.2), ..shape("rect", (88.0, 730.0, 904.0, 4.0), kit.fg) },
-            Layer { bold: Some(false), ..text("Explain it here. Keep it to what someone can do today.", (88.0, 770.0, 904.0, (h - 860.0).max(120.0)), 42.0, kit.muted) },
+            text("Name the tip\nin a few words", (88.0, 440.0, 904.0 + ox, 250.0), 92.0, kit.fg),
+            Layer { opacity: Some(0.2), ..shape("rect", (88.0, 730.0, 904.0 + ox, 4.0), kit.fg) },
+            Layer { bold: Some(false), ..text("Explain it here. Keep it to what someone can do today.", (88.0, 770.0, 904.0 + ox, (h - 860.0).max(120.0)), 42.0, kit.muted) },
         ],
         "cta" => vec![
-            shape("rect", (0.0, 0.0, 1080.0, h), kit.accent),
-            Layer { align: Some("center".into()), ..text("Ready when\nyou are.", (90.0, h / 2.0 - 290.0, 900.0, 300.0), 104.0, "#ffffff") },
-            Layer { radius: Some(55.0), ..shape("rect", (290.0, h / 2.0 + 90.0, 500.0, 110.0), "#ffffff") },
-            Layer { align: Some("center".into()), ..text("Follow for more", (290.0, h / 2.0 + 122.0, 500.0, 60.0), 40.0, kit.accent) },
+            shape("rect", (0.0, 0.0, w, h), kit.accent),
+            Layer { align: Some("center".into()), ..text("Ready when\nyou are.", (90.0 + mid, h / 2.0 - 290.0, 900.0, 300.0), 104.0, "#ffffff") },
+            Layer { radius: Some(55.0), ..shape("rect", (290.0 + mid, h / 2.0 + 90.0, 500.0, 110.0), "#ffffff") },
+            Layer { align: Some("center".into()), ..text("Follow for more", (290.0 + mid, h / 2.0 + 122.0, 500.0, 60.0), 40.0, kit.accent) },
         ],
         _ => Vec::new(),
     };
@@ -89,7 +92,7 @@ mod tests {
             format!("id-{n}")
         };
         let mut project = Project::starter(&mut ids);
-        for (format, theme) in [("portrait", "light"), ("square", "dark")] {
+        for (format, theme) in [("portrait", "light"), ("square", "dark"), ("landscape", "light")] {
             (project.format, project.theme) = (format.into(), theme.into());
             project.slides = DESIGNS.iter().map(|d| slide(d.0, &project, &mut ids)).collect();
             for (i, design) in DESIGNS.iter().enumerate() {
@@ -107,7 +110,7 @@ mod tests {
             format!("id-{n}")
         };
         let mut project = Project::starter(&mut ids);
-        for format in ["portrait", "square", "story"] {
+        for format in ["portrait", "square", "story", "landscape"] {
             project.format = format.into();
             project.slides = DESIGNS.iter().map(|d| slide(d.0, &project, &mut ids)).collect();
             assert_eq!(project.validate(), Ok(()), "{format}");

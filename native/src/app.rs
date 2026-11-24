@@ -4,7 +4,7 @@
 mod canvas;
 
 use crate::designs;
-use crate::model::{FONTS, LAYOUTS, Layer, MAX_LAYERS, Project, Slide};
+use crate::model::{FONTS, FORMATS, LAYOUTS, Layer, MAX_LAYERS, Project, Slide};
 use crate::render::{self, Pictures};
 use crate::samples;
 use crate::storage;
@@ -91,6 +91,19 @@ fn reference_picture(path: &Path) -> Option<egui::ColorImage> {
     ))
 }
 
+/// The New menu's own designs: one empty slide in `format`, with no background at all if `transparent`.
+fn new_design(format: &str, transparent: bool) -> Project {
+    let mut project = Project {
+        name: if transparent { "Untitled transparent design" } else { "Untitled design" }.into(),
+        format: format.into(),
+        ..Project::starter(&mut new_id)
+    };
+    let mut slide = designs::slide("empty", &project, &mut new_id);
+    slide.transparent = transparent;
+    project.slides = vec![slide];
+    project
+}
+
 /// A picture file as the data URL Folio projects embed (PNG, JPEG or WebP under 15 MB, as in Electron).
 fn picture_url(path: &Path) -> Result<String, String> {
     let mime = match path
@@ -152,6 +165,8 @@ pub struct Folio {
     show_references: bool,
     reference_look: (String, String),
     reference_pictures: std::collections::HashMap<String, Option<TextureHandle>>,
+    /// The picture files exports are written as.
+    export_as: render::Picture,
 }
 
 impl Folio {
@@ -191,6 +206,7 @@ impl Folio {
             show_references: false,
             reference_look: (String::new(), String::new()),
             reference_pictures: Default::default(),
+            export_as: render::Picture::default(),
         }
     }
 
@@ -280,14 +296,18 @@ impl Folio {
                 } else {
                     // A design of your own: one empty slide, in the size you pick.
                     ui.separator();
-                    [("Blank portrait (1080 × 1350)", "portrait"), ("Blank square (1080 × 1080)", "square"), ("Blank story (1080 × 1920)", "story")]
+                    FORMATS
                         .into_iter()
-                        .find(|(label, _)| ui.button(*label).clicked())
-                        .map(|(_, format)| {
-                            let mut project = Project { name: "Untitled design".into(), format: format.into(), ..Project::starter(&mut new_id) };
-                            project.slides = vec![designs::slide("empty", &project, &mut new_id)];
-                            project
+                        .find(|(_, name, w, h)| ui.button(format!("Blank {} ({w} × {h})", name.to_lowercase())).clicked())
+                        .map(|(format, ..)| (format, false))
+                        .or_else(|| {
+                            // A see-through vertical canvas, for overlays and stickers.
+                            ui.button("Transparent story (1080 × 1920)")
+                                .on_hover_text("A blank 1080 × 1920 slide with no background: PNG and WebP exports stay see-through")
+                                .clicked()
+                                .then_some(("story", true))
                         })
+                        .map(|(format, transparent)| new_design(format, transparent))
                 };
                 if let Some(project) = start {
                     match self.open(project) {
@@ -381,39 +401,63 @@ impl Folio {
                 .clicked()
             {
                 let pixmap = render::slide(&self.project, self.selected.min(self.project.slides.len() - 1), &mut self.pictures).0;
-                let picture = arboard::ImageData { width: pixmap.width() as usize, height: pixmap.height() as usize, bytes: pixmap.data().into() };
+                // Plain RGBA, so a transparent slide stays see-through where the paste supports it.
+                let picture = arboard::ImageData { width: pixmap.width() as usize, height: pixmap.height() as usize, bytes: render::unpremultiplied(&pixmap).into() };
                 host.toast(match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_image(picture)) {
                     Ok(()) => "Slide copied".into(),
                     Err(error) => format!("Couldn't copy the slide: {error}"),
                 });
             }
+            let kind = self.export_as.name();
             if ui
                 .button("Export slide")
-                .on_hover_text("This slide as a PNG, into Files")
+                .on_hover_text(format!("This slide as a {kind}, into Files"))
                 .clicked()
             {
                 self.export(host, Some(self.selected));
             }
             if ui
                 .button("Export carousel")
-                .on_hover_text("Every slide as numbered PNGs in a ZIP (one slide: a PNG)")
+                .on_hover_text(format!("Every slide as numbered {kind}s in a ZIP (one slide: a {kind})"))
                 .clicked()
             {
                 self.export(host, None);
             }
+            let see_through = self.project.slides.iter().any(|s| s.transparent);
+            egui::ComboBox::from_id_salt("folio-export-as")
+                .selected_text(kind)
+                .width(64.0)
+                .show_ui(ui, |ui| {
+                    for picture in render::Picture::ALL {
+                        let hint = if picture.keeps_transparency() {
+                            "Keeps transparent backgrounds see-through"
+                        } else {
+                            "No transparency: transparent slides get their background color"
+                        };
+                        ui.selectable_value(&mut self.export_as, picture, picture.name()).on_hover_text(hint);
+                    }
+                })
+                .response
+                .on_hover_text("What exports are saved as");
+            if see_through && !self.export_as.keeps_transparency() {
+                ui.label(egui::RichText::new("JPG can't be see-through: transparent slides get their background color").font(font::ui(12.0)).color(color::INK_MUTED));
+            }
         });
     }
 
-    /// Electron Folio's exports: one slide as `<name>.png`; a carousel as `<name>.zip` of `01-<name>.png`…
+    /// Electron Folio's exports: one slide as `<name>.png`; a carousel as `<name>.zip` of `01-<name>.png`… (or
+    /// `.webp` / `.jpg`, as picked beside the buttons).
     fn export(&mut self, host: &mut dyn Host, only: Option<usize>) {
         let name = storage::safe_name(&self.project.name);
         let slides: Vec<usize> =
             only.map_or_else(|| (0..self.project.slides.len()).collect(), |i| vec![i]);
         let result = (|| -> Result<std::path::PathBuf, String> {
             std::fs::create_dir_all(&self.place.exports_dir).map_err(|e| e.to_string())?;
+            let kind = self.export_as;
+            let ext = kind.extension();
             let pngs: Vec<Vec<u8>> = slides
                 .iter()
-                .map(|&i| render::png(&self.project, i, &mut self.pictures))
+                .map(|&i| render::encode(&self.project, i, &mut self.pictures, kind))
                 .collect::<Result<_, _>>()?;
             if pngs.len() == 1 {
                 let path = self
@@ -421,7 +465,7 @@ impl Folio {
                     .exports_dir
                     .join(canopy_ui::canopy_core::files::unique_name(
                         &self.place.exports_dir,
-                        &format!("{name}.png"),
+                        &format!("{name}.{ext}"),
                     ));
                 std::fs::write(&path, &pngs[0]).map_err(|e| e.to_string())?;
                 return Ok(path);
@@ -437,7 +481,7 @@ impl Folio {
                 zip::ZipWriter::new(std::fs::File::create(&path).map_err(|e| e.to_string())?);
             for (i, png) in pngs.iter().enumerate() {
                 zip.start_file(
-                    format!("{:02}-{name}.png", i + 1),
+                    format!("{:02}-{name}.{ext}", i + 1),
                     zip::write::SimpleFileOptions::default(),
                 )
                 .map_err(|e| e.to_string())?;
@@ -472,7 +516,7 @@ impl Folio {
                 ui.ctx().request_repaint();
             }
         }
-        let size = vec2(132.0, 132.0 * self.project.height() / 1080.0);
+        let size = vec2(132.0, 132.0 * self.project.height() / self.project.width());
         egui::ScrollArea::vertical()
             .id_salt("folio-slides")
             .max_height(ui.available_height() - 120.0)
@@ -600,7 +644,7 @@ impl Folio {
             {
                 self.show_references = true;
                 self.reference_look = (
-                    if self.project.format == "square" {
+                    if self.project.height() <= self.project.width() {
                         "Square"
                     } else {
                         "Portrait"
@@ -694,7 +738,7 @@ impl Folio {
             });
         }
         }
-        if self.slide().layout == "blank" {
+        if self.slide().layout == "blank" && !self.slide().transparent {
             let theme = if self.project.theme == "dark" { "#151716" } else { "#fff2ed" };
             let slide = self.slide();
             ui.horizontal(|ui| {
@@ -708,6 +752,23 @@ impl Folio {
                 }
             });
         }
+        ui.horizontal_wrapped(|ui| {
+            let slide = self.slide();
+            ui.checkbox(&mut slide.transparent, "Transparent background")
+                .on_hover_text("No fill behind this slide: PNG and WebP exports keep it see-through (the checkerboard shows where). JPG fills it with the background color.");
+            let transparent = slide.transparent;
+            let all = self.project.slides.iter().all(|s| s.transparent == transparent);
+            if !all
+                && ui
+                    .small_button("Every slide")
+                    .on_hover_text(if transparent { "Make the whole carousel transparent" } else { "Give every slide its background back" })
+                    .clicked()
+            {
+                for slide in &mut self.project.slides {
+                    slide.transparent = transparent;
+                }
+            }
+        });
         ui.separator();
         ui.label(
             egui::RichText::new("Brand kit")
@@ -746,9 +807,9 @@ impl Folio {
             ui.selectable_value(&mut project.theme, "light".into(), "Light");
             ui.selectable_value(&mut project.theme, "dark".into(), "Dark");
             ui.separator();
-            ui.selectable_value(&mut project.format, "portrait".into(), "Portrait");
-            ui.selectable_value(&mut project.format, "square".into(), "Square");
-            ui.selectable_value(&mut project.format, "story".into(), "Story");
+            for (id, name, w, h) in FORMATS {
+                ui.selectable_value(&mut project.format, id.into(), name).on_hover_text(format!("{w} × {h}"));
+            }
         });
         let mut rtl = project.direction.as_deref() == Some("rtl");
         if ui.checkbox(&mut rtl, "Right-to-left (Arabic)").changed() {
@@ -778,17 +839,17 @@ impl Folio {
             (w as f32 * scale).round().max(40.0),
             (h as f32 * scale).round().max(40.0),
         );
-        let slide_h = self.project.height();
+        let (slide_w, slide_h) = (self.project.width(), self.project.height());
         let slide = self.slide();
         if slide.layers.len() >= MAX_LAYERS {
             return Err(format!("A slide can have up to {MAX_LAYERS} elements."));
         }
         let id = new_id();
-        let (x, y) = at.unwrap_or(((1080.0 - width) / 2.0, (slide_h - height) / 2.0));
+        let (x, y) = at.unwrap_or(((slide_w - width) / 2.0, (slide_h - height) / 2.0));
         slide.layers.push(Layer {
             id: id.clone(),
             kind: "image".into(),
-            x: x.clamp(0.0, 1080.0 - width).round(),
+            x: x.clamp(0.0, slide_w - width).round(),
             y: y.clamp(0.0, slide_h - height).round(),
             width,
             height,
@@ -808,6 +869,7 @@ impl Folio {
             .is_none_or(|(_, project, i)| *project != self.project || *i != index);
         if stale {
             let (pixmap, reduced) = render::slide(&self.project, index, &mut self.pictures);
+            let pixmap = render::on_checkerboard(pixmap);
             let image = egui::ColorImage::from_rgba_premultiplied(
                 [pixmap.width() as usize, pixmap.height() as usize],
                 pixmap.data(),
@@ -828,11 +890,11 @@ impl Folio {
                 }
             }
         }
-        let h = self.project.height();
-        let scale = (area.width() / 1080.0).min((area.height() - 24.0) / h);
+        let (w, h) = (self.project.width(), self.project.height());
+        let scale = (area.width() / w).min((area.height() - 24.0) / h);
         let rect = Rect::from_center_size(
             pos2(area.center().x, area.top() + h * scale / 2.0),
-            vec2(1080.0 * scale, h * scale),
+            vec2(w * scale, h * scale),
         );
         self.slide_rect = Some(rect);
         if let Some((texture, ..)) = &self.preview {
@@ -868,7 +930,7 @@ impl Folio {
             .as_ref()
             .is_none_or(|(_, project, i)| *project != self.project || *i != index)
         {
-            let pixmap = render::slide(&self.project, index, &mut self.pictures).0;
+            let pixmap = render::on_checkerboard(render::slide(&self.project, index, &mut self.pictures).0);
             let image = egui::ColorImage::from_rgba_premultiplied(
                 [pixmap.width() as usize, pixmap.height() as usize],
                 pixmap.data(),
@@ -898,7 +960,8 @@ impl Folio {
             ui.label(egui::RichText::new("Take it for a swipe.").font(font::bold(18.0)));
             if let Some((texture, ..)) = &self.preview_big {
                 let size = texture.size_vec2();
-                ui.add(egui::Image::new(texture).fit_to_exact_size(size * (height / size.y)));
+                let width = (ui.ctx().content_rect().width() - 120.0).max(300.0);
+                ui.add(egui::Image::new(texture).fit_to_exact_size(size * (height / size.y).min(width / size.x)));
             }
             ui.horizontal(|ui| {
                 if ui.add_enabled(index > 0, egui::Button::new("←")).clicked() {
@@ -1051,7 +1114,7 @@ impl Folio {
         pictures: &mut Pictures,
         width: u32,
     ) -> TextureHandle {
-        let pixmap = render::slide(project, index, pictures).0;
+        let pixmap = render::on_checkerboard(render::slide(project, index, pictures).0);
         let full =
             image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), pixmap.data().to_vec())
                 .unwrap();
@@ -1229,12 +1292,15 @@ impl Folio {
                                 ui.vertical(|ui| {
                                     ui.set_width(140.0);
                                     let clicked = match self.covers.get(&doc.id) {
-                                        Some((_, texture)) => ui
-                                            .add(egui::Button::image(
-                                                egui::Image::new(texture)
-                                                    .fit_to_exact_size(vec2(130.0, 162.0)),
+                                        Some((_, texture)) => {
+                                            // Kept in shape, inside the same box whatever the slide size.
+                                            let size = texture.size_vec2();
+                                            let fit = size * (130.0 / size.x).min(162.0 / size.y);
+                                            ui.add(egui::Button::image(
+                                                egui::Image::new(texture).fit_to_exact_size(fit),
                                             ))
-                                            .clicked(),
+                                            .clicked()
+                                        }
                                         None => ui
                                             .add_sized([130.0, 162.0], egui::Button::new("…"))
                                             .clicked(),
@@ -1462,7 +1528,7 @@ impl CanopyApp for Folio {
             .filter(|rect| rect.contains(position))
             .map(|rect| {
                 (
-                    (position.x - rect.left()) * 1080.0 / rect.width(),
+                    (position.x - rect.left()) * self.project.width() / rect.width(),
                     (position.y - rect.top()) * self.project.height() / rect.height(),
                 )
             });
@@ -1641,6 +1707,99 @@ mod tests {
         app.save().unwrap();
         assert!(super::storage::list(&app.place).len() > 0);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A 1920 × 1080 slide with a transparent background exported the way the toolbar's buttons do: PNG and WebP
+    /// keep real alpha, JPG gets the slide's background color. `FOLIO_KEEP_EXPORTS=<dir>` writes the files there
+    /// to look at.
+    #[test]
+    fn a_landscape_transparent_slide_exports_see_through() {
+        use canopy_ui::{Host, Place, SpaceInfo};
+        #[derive(Default)]
+        struct TestHost(Vec<std::path::PathBuf>, Vec<String>);
+        impl Host for TestHost {
+            fn toast(&mut self, message: String) {
+                self.1.push(message);
+            }
+            fn exported(&mut self, path: std::path::PathBuf) {
+                self.0.push(path);
+            }
+        }
+        let root = std::env::temp_dir().join(format!("folio-transparent-{}", super::new_id()));
+        let kept = std::env::var_os("FOLIO_KEEP_EXPORTS").map(std::path::PathBuf::from);
+        let place = Place {
+            space: Some(SpaceInfo { id: "test".into(), name: "test".into(), dir: root.clone() }),
+            projects_dir: root.join("projects"),
+            data_dir: root.join("data"),
+            exports_dir: kept.clone().unwrap_or_else(|| root.join("Files")),
+        };
+        let mut app = super::Folio::new(place);
+        let mut project = super::Project { name: "Wide clear".into(), format: "landscape".into(), ..super::Project::starter(&mut super::new_id) };
+        let mut blank = super::designs::slide("empty", &project, &mut super::new_id);
+        blank.transparent = true;
+        blank.layers.push(super::Layer { kind: "shape".into(), shape: Some("rect".into()), x: 760.0, y: 340.0, width: 400.0, height: 400.0, color: Some("#ff0000".into()), ..super::Layer::default() });
+        let mut text = project.slides[1].clone();
+        text.transparent = true;
+        project.slides = vec![blank, text];
+        assert_eq!(project.validate(), Ok(()));
+        app.open(project).unwrap();
+
+        let mut host = TestHost::default();
+        for kind in super::render::Picture::ALL {
+            app.export_as = kind;
+            app.export(&mut host, Some(0));
+        }
+        assert!(host.1.is_empty(), "{:?}", host.1);
+        let [png, webp, jpg] = host.0.as_slice() else { panic!("{:?}", host.0) };
+        for (path, ext) in [(png, "png"), (webp, "webp"), (jpg, "jpg")] {
+            assert_eq!(path.extension().unwrap(), ext);
+        }
+        for path in [png, webp] {
+            let picture = image::open(path).unwrap();
+            assert!(picture.color().has_alpha(), "{path:?}");
+            let picture = picture.to_rgba8();
+            assert_eq!(picture.dimensions(), (1920, 1080));
+            assert_eq!(picture.get_pixel(5, 5).0[3], 0, "the corner is see-through in {path:?}");
+            assert_eq!(picture.get_pixel(960, 540).0, [255, 0, 0, 255], "the shape is solid in {path:?}");
+        }
+        let picture = image::open(jpg).unwrap();
+        assert!(!picture.color().has_alpha());
+        let picture = picture.to_rgb8();
+        assert_eq!(picture.dimensions(), (1920, 1080));
+        let corner = picture.get_pixel(5, 5).0;
+        // The light theme's background, #fff2ed, give or take JPEG.
+        assert!(corner.iter().zip([0xff, 0xf2, 0xed]).all(|(a, b)| (*a as i32 - b).abs() <= 3), "{corner:?}");
+
+        // The carousel: a ZIP of numbered see-through PNGs, the template layout's included.
+        app.export_as = super::render::Picture::Png;
+        app.export(&mut host, None);
+        let zip_path = host.0.last().unwrap();
+        assert_eq!(zip_path.extension().unwrap(), "zip");
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(zip_path).unwrap()).unwrap();
+        assert_eq!(zip.len(), 2);
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut zip.by_name("02-Wide clear.png").unwrap(), &mut bytes).unwrap();
+        let second = image::load_from_memory(&bytes).unwrap().to_rgba8();
+        assert_eq!(second.dimensions(), (1920, 1080));
+        assert_eq!(second.get_pixel(1900, 540).0[3], 0);
+        assert!(second.pixels().any(|p| p.0[3] == 255), "the text is drawn");
+        if kept.is_none() {
+            std::fs::remove_dir_all(root).ok();
+        }
+    }
+
+    #[test]
+    fn the_transparent_story_preset_is_a_clear_1080_by_1920_canvas() {
+        let project = super::new_design("story", true);
+        assert_eq!(project.validate(), Ok(()));
+        assert_eq!((project.width(), project.height()), (1080.0, 1920.0));
+        assert!(project.slides.len() == 1 && project.slides[0].transparent);
+        let png = super::render::png(&project, 0, &mut super::Pictures::default()).unwrap();
+        let picture = image::load_from_memory(&png).unwrap().to_rgba8();
+        assert_eq!(picture.dimensions(), (1080, 1920));
+        assert!(picture.pixels().all(|p| p.0[3] == 0), "nothing on it, so every pixel is see-through");
+        // The plain blank presets keep their background.
+        assert!(!super::new_design("landscape", false).slides[0].transparent);
     }
 
     #[test]
