@@ -4,7 +4,7 @@
 mod canvas;
 
 use crate::designs;
-use crate::model::{FONTS, FORMATS, LAYOUTS, Layer, MAX_LAYERS, Project, Slide};
+use crate::model::{CUSTOM_SIZES, FONTS, FORMATS, LAYOUTS, Layer, MAX_LAYERS, PictureEdit, Project, Slide};
 use crate::render::{self, Pictures};
 use crate::samples;
 use crate::storage;
@@ -89,6 +89,39 @@ fn reference_picture(path: &Path) -> Option<egui::ColorImage> {
         [image.width() as usize, image.height() as usize],
         image.as_raw(),
     ))
+}
+
+/// An app's name from its Canopy id, for messages.
+fn app_name(id: &str) -> String {
+    match id {
+        "streamcuts" => "StreamCuts".into(),
+        other => {
+            let mut chars = other.chars();
+            chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+        }
+    }
+}
+
+/// Another app asking Folio to edit a picture: the document id `edit-picture:` followed by this as JSON, opened with
+/// `Host::open_in("folio", ...)`. Folio opens the picture at its own size (or the project it made from it last time);
+/// Save writes the edited picture as a PNG into the exports folder and opens `edited-picture:` + [`EditedPicture`]
+/// as JSON in `app`, with `reply` given back as it came.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PictureRequest {
+    pub path: String,
+    pub app: String,
+    #[serde(default)]
+    pub reply: String,
+}
+
+pub const EDIT_PICTURE: &str = "edit-picture:";
+pub const EDITED_PICTURE: &str = "edited-picture:";
+
+/// What Folio hands back after Save.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct EditedPicture {
+    pub path: String,
+    pub reply: String,
 }
 
 /// The New menu's own designs: one empty slide in `format`, with no background at all if `transparent`.
@@ -221,6 +254,86 @@ impl Folio {
         Ok(())
     }
 
+    /// Opens a picture another app sent: the project made from it before (matched by the picture or the edited
+    /// copy Save wrote), else a new one at the picture's own size with the picture as an element on a transparent
+    /// slide, so its own transparency survives.
+    fn edit_picture(&mut self, request: PictureRequest) -> Result<(), String> {
+        let same = |p: &str| Path::new(p) == Path::new(&request.path);
+        let matches = |project: &Project| {
+            project.picture_edit.as_ref().is_some_and(|e| e.app == request.app && (same(&e.source) || e.output.as_deref().is_some_and(same)))
+        };
+        let reply = |project: &mut Project| {
+            if let Some(edit) = &mut project.picture_edit {
+                edit.reply = request.reply.clone();
+            }
+        };
+        if matches(&self.project) {
+            reply(&mut self.project);
+            return Ok(());
+        }
+        let mut documents = storage::list(&self.place);
+        documents.sort_by_key(|d| std::cmp::Reverse(d.saved_at));
+        if let Some(mut earlier) = documents.iter().filter_map(|d| storage::load_document(&self.place, &d.id).ok()).find(|p| matches(p)) {
+            reply(&mut earlier);
+            self.open(earlier)?;
+            self.edited_at = Some(Instant::now());
+            return Ok(());
+        }
+        let path = Path::new(&request.path);
+        let url = picture_url(path)?;
+        let (w, h) = image::image_dimensions(path).map_err(|e| e.to_string())?;
+        if !CUSTOM_SIZES.contains(&w) || !CUSTOM_SIZES.contains(&h) {
+            return Err(format!("Folio edits pictures from {} to {} pixels a side; this one is {w} x {h}", CUSTOM_SIZES.start(), CUSTOM_SIZES.end()));
+        }
+        let name: String = path.file_stem().map_or_else(|| "Picture".into(), |s| s.to_string_lossy().into_owned()).chars().take(90).collect();
+        let mut project = Project {
+            name: name.clone(),
+            format: "custom".into(),
+            custom_size: Some([w, h]),
+            picture_edit: Some(PictureEdit { source: request.path.clone(), output: None, app: request.app.clone(), reply: request.reply.clone() }),
+            ..Project::starter(&mut new_id)
+        };
+        let mut slide = Slide { eyebrow: String::new(), title: name, body: String::new(), texture: false, swipe: false, transparent: true, ..Slide::new("blank", new_id()) };
+        slide.layers.push(Layer { id: new_id(), kind: "image".into(), x: 0.0, y: 0.0, width: w as f32, height: h as f32, src: Some(url), ..Layer::default() });
+        project.slides = vec![slide];
+        project.validate()?;
+        self.open(project)?;
+        self.edited_at = Some(Instant::now());
+        Ok(())
+    }
+
+    /// After Save, for a picture another app sent: the first slide written as a PNG (the same file each time, in
+    /// the exports folder) and handed back. What to tell the person, or nothing for an ordinary project.
+    fn give_back(&mut self, host: &mut dyn Host) -> Result<Option<String>, String> {
+        let Some(edit) = self.project.picture_edit.clone() else {
+            return Ok(None);
+        };
+        let output = match edit.output.clone() {
+            Some(output) => std::path::PathBuf::from(output),
+            None => {
+                std::fs::create_dir_all(&self.place.exports_dir).map_err(|e| e.to_string())?;
+                let stem = storage::safe_name(&self.project.name);
+                let output = self.place.exports_dir.join(canopy_ui::canopy_core::files::unique_name(&self.place.exports_dir, &format!("{stem} (edited).png")));
+                if let Some(link) = &mut self.project.picture_edit {
+                    link.output = Some(output.to_string_lossy().into_owned());
+                }
+                // Remember the file, so the next Save writes the same one.
+                self.save()?;
+                output
+            }
+        };
+        let png = render::png(&self.project, 0, &mut self.pictures)?;
+        canopy_ui::canopy_core::files::write_atomic(&output, &png).map_err(|e| e.to_string())?;
+        let file = output.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let back = EditedPicture { path: output.to_string_lossy().into_owned(), reply: edit.reply };
+        let document = format!("{EDITED_PICTURE}{}", serde_json::to_string(&back).map_err(|e| e.to_string())?);
+        Ok(Some(if host.open_in(&edit.app, &document) {
+            format!("Saved {file} and sent it back to {}", app_name(&edit.app))
+        } else {
+            format!("Saved {file}; open {} in Canopy to take it back", app_name(&edit.app))
+        }))
+    }
+
     fn receive_files(
         &mut self,
         files: Vec<SharedFile>,
@@ -339,9 +452,16 @@ impl Folio {
                     .desired_width(220.0)
                     .font(font::bold(14.0)),
             );
-            if ui.button("Save").clicked() {
-                match self.save() {
-                    Ok(()) => host.toast("Folio project saved".into()),
+            let back = self.project.picture_edit.as_ref().map(|edit| app_name(&edit.app));
+            let save = ui.button("Save");
+            let save = match &back {
+                Some(app) => save.on_hover_text(format!("Saves, and sends the edited picture back to {app}")),
+                None => save,
+            };
+            if save.clicked() {
+                match self.save().and_then(|()| self.give_back(host)) {
+                    Ok(Some(text)) => host.toast(text),
+                    Ok(None) => host.toast("Folio project saved".into()),
                     Err(error) => host.toast(error),
                 }
             }
@@ -807,6 +927,9 @@ impl Folio {
             ui.selectable_value(&mut project.theme, "light".into(), "Light");
             ui.selectable_value(&mut project.theme, "dark".into(), "Dark");
             ui.separator();
+            if let Some([w, h]) = project.custom_size {
+                ui.selectable_value(&mut project.format, "custom".into(), "Picture's size").on_hover_text(format!("{w} × {h}"));
+            }
             for (id, name, w, h) in FORMATS {
                 ui.selectable_value(&mut project.format, id.into(), name).on_hover_text(format!("{w} × {h}"));
             }
@@ -1448,8 +1571,11 @@ impl CanopyApp for Folio {
             self.paste_layers();
         }
         if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
-            if let Err(error) = self.save() {
-                host.toast(error);
+            // Like the Save button: a picture another app sent goes back to it.
+            match self.save().and_then(|()| self.give_back(host)) {
+                Ok(Some(text)) => host.toast(text),
+                Ok(None) => {}
+                Err(error) => host.toast(error),
             }
         }
         let rect = ui.max_rect();
@@ -1536,6 +1662,19 @@ impl CanopyApp for Folio {
     }
 
     fn open_document(&mut self, id: &str, host: &mut dyn Host) {
+        if let Some(json) = id.strip_prefix(EDIT_PICTURE) {
+            let opened = serde_json::from_str::<PictureRequest>(json)
+                .map_err(|_| "Folio couldn't read which picture to edit".to_string())
+                .and_then(|request| {
+                    let from = app_name(&request.app);
+                    self.edit_picture(request).map(|()| from)
+                });
+            host.toast(match opened {
+                Ok(from) => format!("Editing the picture from {from}: Save sends it back"),
+                Err(error) => error,
+            });
+            return;
+        }
         if let Err(error) =
             storage::load_document(&self.place, id).and_then(|project| self.open(project))
         {
@@ -1786,6 +1925,80 @@ mod tests {
         if kept.is_none() {
             std::fs::remove_dir_all(root).ok();
         }
+    }
+
+    /// StreamCuts' "Edit in Folio": a picture opens at its own size, Save writes the edited PNG (transparency kept)
+    /// and hands it back with StreamCuts' reference, and sending the edited picture again reopens the same project.
+    #[test]
+    fn a_picture_sent_to_edit_comes_back_after_save() {
+        use canopy_ui::{CanopyApp, Host, Place, SpaceInfo};
+        #[derive(Default)]
+        struct TestHost(Vec<String>, Vec<(String, String)>);
+        impl Host for TestHost {
+            fn toast(&mut self, message: String) {
+                self.0.push(message);
+            }
+            fn exported(&mut self, _: std::path::PathBuf) {}
+            fn open_in(&mut self, app: &str, document: &str) -> bool {
+                self.1.push((app.into(), document.into()));
+                true
+            }
+        }
+        let root = std::env::temp_dir().join(format!("folio-edit-picture-{}", super::new_id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let place = Place {
+            space: Some(SpaceInfo { id: "test".into(), name: "test".into(), dir: root.clone() }),
+            projects_dir: root.join("Folio"),
+            data_dir: root.join("data"),
+            exports_dir: root.join("Files"),
+        };
+        // A 640 x 360 frame, see-through on its left half.
+        let picture = root.join("frame at 0m05s.png");
+        let mut frame = image::RgbaImage::from_pixel(640, 360, image::Rgba([0, 0, 255, 255]));
+        for (x, _, p) in frame.enumerate_pixels_mut() {
+            if x < 320 {
+                *p = image::Rgba([0, 0, 0, 0]);
+            }
+        }
+        frame.save(&picture).unwrap();
+        let request = |path: &std::path::Path| {
+            let request = super::PictureRequest { path: path.to_string_lossy().into_owned(), app: "streamcuts".into(), reply: "{\"media\":\"m1\"}".into() };
+            format!("{}{}", super::EDIT_PICTURE, serde_json::to_string(&request).unwrap())
+        };
+        let mut app = super::Folio::new(place);
+        let mut host = TestHost::default();
+        app.open_document(&request(&picture), &mut host);
+        assert_eq!((app.project.format.as_str(), app.project.width(), app.project.height()), ("custom", 640.0, 360.0), "{:?}", host.0);
+        assert_eq!(app.project.slides.len(), 1);
+        assert!(app.project.slides[0].transparent);
+        // An edit: a white bar across the middle.
+        app.project.slides[0].layers.push(super::Layer { kind: "shape".into(), shape: Some("rect".into()), x: 0.0, y: 170.0, width: 640.0, height: 20.0, color: Some("#ffffff".into()), ..super::Layer::default() });
+        app.save().unwrap();
+        let said = app.give_back(&mut host).unwrap().unwrap();
+        assert!(said.contains("sent it back to StreamCuts"), "{said}");
+        let (to, document) = host.1.last().unwrap().clone();
+        assert_eq!(to, "streamcuts");
+        let back: super::EditedPicture = serde_json::from_str(document.strip_prefix(super::EDITED_PICTURE).unwrap()).unwrap();
+        assert_eq!(back.reply, "{\"media\":\"m1\"}");
+        let output = std::path::PathBuf::from(&back.path);
+        assert_eq!(output.file_name().unwrap(), "frame at 0m05s (edited).png");
+        assert!(picture.is_file(), "the original is left alone");
+        let edited = image::open(&output).unwrap().to_rgba8();
+        assert_eq!(edited.dimensions(), (640, 360));
+        assert_eq!(edited.get_pixel(100, 50).0[3], 0, "still see-through where the picture was");
+        assert_eq!(edited.get_pixel(500, 50).0, [0, 0, 255, 255]);
+        assert_eq!(edited.get_pixel(500, 180).0, [255, 255, 255, 255], "with the edit");
+        // Saving again writes the same file.
+        app.give_back(&mut host).unwrap();
+        assert_eq!(host.1.len(), 2);
+        assert!(host.1[1].1.contains("(edited).png"));
+        assert!(!root.join("Files").join("frame at 0m05s (edited) (2).png").exists());
+        // Another project, then the edited picture sent again: the same project, its bar still an element.
+        app.open(super::Project::starter(&mut super::new_id)).unwrap();
+        app.open_document(&request(&output), &mut host);
+        assert_eq!(app.project.slides[0].layers.len(), 2, "{:?}", host.0);
+        assert_eq!(app.project.picture_edit.as_ref().unwrap().output.as_deref(), Some(back.path.as_str()));
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

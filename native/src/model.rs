@@ -8,9 +8,15 @@ use serde_json::{Map, Value};
 pub struct Project {
     pub version: u32,
     pub name: String,
-    /// "portrait" (1080 × 1350), "square" (1080 × 1080), or native Folio's "story" (1080 × 1920) and "landscape"
-    /// (1920 × 1080, 16:9).
+    /// "portrait" (1080 × 1350), "square" (1080 × 1080), or native Folio's "story" (1080 × 1920), "landscape"
+    /// (1920 × 1080, 16:9) and "custom" (`custom_size`: a picture another app sent, edited at its own size).
     pub format: String,
+    /// Width and height when the format is "custom".
+    #[serde(default, rename = "customSize", skip_serializing_if = "Option::is_none")]
+    pub custom_size: Option<[u32; 2]>,
+    /// A picture another app sent to be edited here, and where Save hands it back.
+    #[serde(default, rename = "pictureEdit", skip_serializing_if = "Option::is_none")]
+    pub picture_edit: Option<PictureEdit>,
     /// "light" or "dark".
     pub theme: String,
     pub accent: String,
@@ -25,6 +31,23 @@ pub struct Project {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
+
+/// A picture sent from another app to edit ("edit-picture:" documents, see `app::PictureRequest`): the file it came
+/// from, the file Save writes the edited picture to, and the app to hand that back to with the reference it gave.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PictureEdit {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    pub app: String,
+    /// The sender's own reference, given back as it came (StreamCuts: its project and the picture's media).
+    #[serde(default)]
+    pub reply: String,
+}
+
+/// The sizes a "custom" project may have: what a picture can be, within reason.
+pub const CUSTOM_SIZES: std::ops::RangeInclusive<u32> = 16..=8000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -207,6 +230,9 @@ fn hex_color(value: &str) -> bool {
 
 impl Project {
     fn size(&self) -> (f32, f32) {
+        if let (true, Some([w, h])) = (self.format == "custom", self.custom_size) {
+            return (w as f32, h as f32);
+        }
         FORMATS.iter().find(|f| f.0 == self.format).map_or((1080.0, 1350.0), |f| (f.2, f.3))
     }
 
@@ -231,7 +257,8 @@ impl Project {
         if self.version != 1
             || self.slides.is_empty()
             || self.slides.len() > 20
-            || !FORMATS.iter().any(|f| f.0 == self.format)
+            || !(FORMATS.iter().any(|f| f.0 == self.format)
+                || self.format == "custom" && self.custom_size.is_some_and(|s| s.iter().all(|n| CUSTOM_SIZES.contains(n))))
             || !["light", "dark"].contains(&self.theme.as_str())
         {
             return Err("This is not a supported Folio project.".into());
@@ -388,6 +415,8 @@ impl Project {
             handle: "@yourstudio".into(),
             font: "Arial".into(),
             direction: None,
+            custom_size: None,
+            picture_edit: None,
             slides,
             extra: Map::new(),
         }
@@ -505,6 +534,13 @@ mod tests {
         project.slides[0].layers[0].x = 1920.0;
         assert!(project.validate().is_err());
         project.format = "widescreen".into();
+        assert!(project.validate().is_err());
+        // A picture's own size: only with a size, and a sensible one.
+        project.format = "custom".into();
+        assert!(project.validate().is_err());
+        project.custom_size = Some([3000, 1700]);
+        assert_eq!((project.validate(), project.width(), project.height()), (Ok(()), 3000.0, 1700.0));
+        project.custom_size = Some([9000, 1700]);
         assert!(project.validate().is_err());
         let mut project = Project::starter(&mut ids());
         project.slides[1].image = "data:image/gif;base64,AAAA".into();

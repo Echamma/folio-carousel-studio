@@ -98,6 +98,8 @@ pub fn navy(new_id: &mut impl FnMut() -> String) -> Project {
         handle: "@yourstudio".into(),
         font: "Arial".into(),
         direction: None,
+        custom_size: None,
+        picture_edit: None,
         slides,
         extra: Map::new(),
     }
